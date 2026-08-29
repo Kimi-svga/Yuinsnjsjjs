@@ -1,11 +1,27 @@
 /**
  * Pit Wall Pulse 7.0 — ULTIMATE
- * Полная логика: гонка, чемпионат, пресс-конференция с бустами,
- * ТЕСТОВЫЙ ЗАЕЗД — полноценная тренировка с управлением как в гонке
+ * 
+ * АРХИТЕКТУРА:
+ * ┌─────────────────────────────────────────────────────────┐
+ * │  1. ДАННЫЕ (F1)                                       │
+ * │     └── teams, drivers, tracks, calendar, weathers    │
+ * ├─────────────────────────────────────────────────────────┤
+ * │  2. КЛАСС PitWallPulse                               │
+ * │     ├── Конструктор                                  │
+ * │     ├── Инициализация (DOM, рендеры)                 │
+ * │     ├── Навигация                                    │
+ * │     ├── Гараж                                        │
+ * │     ├── Тестовый заезд                               │
+ * │     ├── Квалификация                                 │
+ * │     ├── Гонка                                        │
+ * │     ├── Пресс-конференция (ИСПРАВЛЕНА)              │
+ * │     ├── Чемпионат                                    │
+ * │     └── Сброс / Управление сезоном                   │
+ * └─────────────────────────────────────────────────────────┘
  */
 
 // ============================================================
-// ДАННЫЕ F1 2026
+// 1. ДАННЫЕ F1 2026
 // ============================================================
 const F1 = {
     teams: [
@@ -108,27 +124,38 @@ const F1 = {
 };
 
 // ============================================================
-// КЛАСС ИГРЫ
+// 2. КЛАСС ИГРЫ
 // ============================================================
 class PitWallPulse {
+    // ─── КОНСТРУКТОР ────────────────────────────────────────────
     constructor() {
-        // Состояние сезона
+        this.initState();
+        this.initDOM();
+        this.initGame();
+        
+        console.log('🏎️ Pit Wall Pulse 7.0 ULTIMATE загружен!');
+        console.log(`👤 Пилот: ${this.playerPilot.name} (${this.playerTeam.name})`);
+        console.log(`🏁 Всего Гран-при: ${this.totalRounds}`);
+        console.log(`💪 Активные бусты:`, this.pilotBoosts);
+    }
+
+    // ─── ИНИЦИАЛИЗАЦИЯ СОСТОЯНИЯ ──────────────────────────────
+    initState() {
+        // Сезон
         this.currentRound = 0;
         this.totalRounds = F1.calendar.length;
-        this.playerPilot = null;
-        this.playerTeam = null;
+        this.playerPilot = F1.drivers[Math.floor(Math.random() * F1.drivers.length)];
+        this.playerTeam = F1.teams.find(t => t.name === this.playerPilot.team);
         this.selectedTire = 'medium';
         this.championship = {};
         this.constructorsChamp = {};
         this.stats = { races: 0, wins: 0, podiums: 0, points: 0, fastestLaps: 0 };
         this.raceHistory = [];
-
-        // БУСТЫ
         this.pilotBoosts = { attack: 0, defense: 0, rain: 0, start: 0, fuel: 0, qualy: 0 };
         this.confidence = 50;
 
-        // ТЕСТОВЫЙ ЗАЕЗД — те же механики что и в гонке
-        this.testState = {
+        // Тестовый заезд
+        this.test = {
             running: false,
             lap: 0,
             maxLaps: 15,
@@ -137,92 +164,87 @@ class PitWallPulse {
             tyre: 70,
             fuel: 90,
             energy: 100,
-            fastestLap: false,
-            fastestLapTime: 999,
-            pitStops: 0,
-            penalties: 0,
-            penaltyHistory: [],
             bestLap: 999,
-            lapTimes: [],
-            score: 0,
+            pitStops: 0,
             track: null,
             weather: null,
             tire: 'medium',
             difficulty: null,
             timer: null,
-            waiting: false,
-            chatMessages: []
+            waiting: false
         };
 
-        // Состояние гонки
-        this.lap = 0;
-        this.maxLaps = 40;
-        this.done = false;
-        this.positions = [];
-        this.playerPos = 1;
-        this.overtakes = [];
-        this.penalties = 0;
-        this.points = 0;
-        this.ers = 85;
-        this.tyre = 70;
-        this.fuel = 90;
-        this.energy = 100;
-        this.waiting = false;
-        this.track = null;
-        this.weather = null;
-        this.penaltyHistory = [];
-        this.fastestLap = false;
-        this.fastestLapTime = 999;
-        this.racePhase = 'qualy';
-        this.raceStarted = false;
-        this.pitStops = 0;
-        this.dotd = null;
-        this.raceRunning = false;
-        this.raceTimer = null;
+        // Гонка
+        this.race = {
+            lap: 0,
+            maxLaps: 40,
+            done: false,
+            positions: [],
+            playerPos: 1,
+            overtakes: [],
+            penalties: 0,
+            points: 0,
+            ers: 85,
+            tyre: 70,
+            fuel: 90,
+            energy: 100,
+            waiting: false,
+            track: null,
+            weather: null,
+            penaltyHistory: [],
+            fastestLap: false,
+            fastestLapTime: 999,
+            pitStops: 0,
+            dotd: null,
+            running: false,
+            timer: null
+        };
 
         // Квалификация
-        this.qualyClicks = 0;
-        this.qualyTime = 10;
-        this.qualyActive = false;
-        this.qualyTimer = null;
-        this.qualyDone = false;
+        this.qualy = {
+            clicks: 0,
+            time: 10,
+            active: false,
+            timer: null,
+            done: false
+        };
 
-        // Прогноз погоды
+        // Погода
         this.weatherForecast = 0;
         this.weatherChange = false;
 
-        // DOM элементы
-        this.els = {};
-
-        this.init();
+        // Фаза игры
+        this.phase = 'qualy'; // 'qualy' | 'race' | 'finished'
+        this.raceStarted = false;
     }
 
-    // ============================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ============================================================
-    init() {
-        F1.drivers.forEach(d => this.championship[d.name] = 0);
-        F1.teams.forEach(t => this.constructorsChamp[t.name] = 0);
-
+    // ─── ИНИЦИАЛИЗАЦИЯ DOM ──────────────────────────────────────
+    initDOM() {
         this.els = {
+            // Навигация
+            navLinks: document.querySelectorAll('.nav-links a'),
+            sections: document.querySelectorAll('.section'),
+            navToggle: document.getElementById('navToggle'),
+            
+            // Игра
             gameRound: document.getElementById('gameRound'),
             gameTrack: document.getElementById('gameTrack'),
             gameLap: document.getElementById('gameLap'),
-            lapTrack: document.getElementById('lapTrack'),
-            raceGrid: document.getElementById('raceGrid'),
-            chatMessages: document.getElementById('chatMessages'),
+            gameReset: document.getElementById('gameReset'),
+            
+            // Квалификация
+            qualyView: document.getElementById('qualyView'),
             qualyGrid: document.getElementById('qualyGrid'),
             qualyTimer: document.getElementById('qualyTimer'),
             qualyClicks: document.getElementById('qualyClicks'),
             qualyPosition: document.getElementById('qualyPosition'),
             btnGas: document.getElementById('btnGas'),
-            btnAttack: document.getElementById('btnAttack'),
-            btnConserve: document.getElementById('btnConserve'),
-            btnBox: document.getElementById('btnBox'),
-            btnStewards: document.getElementById('btnStewards'),
-            btnTires: document.getElementById('btnTires'),
-            btnStartRace: document.getElementById('btnStartRace'),
-            tireSelect: document.getElementById('tireSelect'),
+            
+            // Гонка
+            raceView: document.getElementById('raceView'),
+            lapTrack: document.getElementById('lapTrack'),
+            raceGrid: document.getElementById('raceGrid'),
+            chatMessages: document.getElementById('chatMessages'),
             ersBar: document.getElementById('ersBar'),
             tyreBar: document.getElementById('tyreBar'),
             fuelBar: document.getElementById('fuelBar'),
@@ -231,6 +253,16 @@ class PitWallPulse {
             tyreValue: document.getElementById('tyreValue'),
             fuelValue: document.getElementById('fuelValue'),
             energyValue: document.getElementById('energyValue'),
+            btnStartRace: document.getElementById('btnStartRace'),
+            btnAttack: document.getElementById('btnAttack'),
+            btnConserve: document.getElementById('btnConserve'),
+            btnBox: document.getElementById('btnBox'),
+            btnStewards: document.getElementById('btnStewards'),
+            btnTires: document.getElementById('btnTires'),
+            tireSelect: document.getElementById('tireSelect'),
+            
+            // Протокол
+            protocolView: document.getElementById('protocolView'),
             pFinish: document.getElementById('pFinish'),
             pPoints: document.getElementById('pPoints'),
             pPenalties: document.getElementById('pPenalties'),
@@ -239,10 +271,8 @@ class PitWallPulse {
             pDotd: document.getElementById('pDotd'),
             pResult: document.getElementById('pResult'),
             btnNext: document.getElementById('btnNext'),
-            qualyView: document.getElementById('qualyView'),
-            raceView: document.getElementById('raceView'),
-            protocolView: document.getElementById('protocolView'),
-            gameReset: document.getElementById('gameReset'),
+            
+            // Гараж
             pilotList: document.getElementById('pilotList'),
             teamList: document.getElementById('teamList'),
             garageChat: document.getElementById('garageChat'),
@@ -251,41 +281,73 @@ class PitWallPulse {
             simDisplay: document.getElementById('simDisplay'),
             simStart: document.getElementById('simStart'),
             simStop: document.getElementById('simStop'),
+            
+            // Статистика
             statRaces: document.getElementById('statRaces'),
             statWins: document.getElementById('statWins'),
             statPodiums: document.getElementById('statPodiums'),
             statPoints: document.getElementById('statPoints'),
             statFastest: document.getElementById('statFastest'),
+            
+            // Зачёт
             driversStandings: document.getElementById('driversStandings'),
             constructorsStandings: document.getElementById('constructorsStandings'),
-            startGameBtn: document.getElementById('startGameBtn')
+            
+            // Кнопки
+            startGameBtn: document.getElementById('startGameBtn'),
+            resetBtn: document.getElementById('resetBtn'),
+            
+            // Тестовый заезд (динамически создаётся)
+            testStart: null,
+            testStop: null,
+            testStatus: null,
+            testLapDisplay: null,
+            testBestDisplay: null,
+            testSpeedDisplay: null,
+            testConfidenceDisplay: null,
+            testErsBar: null,
+            testTyreBar: null,
+            testFuelBar: null,
+            testEnergyBar: null,
+            testErsValue: null,
+            testTyreValue: null,
+            testFuelValue: null,
+            testEnergyValue: null,
+            testAttack: null,
+            testConserve: null,
+            testBox: null,
+            testChat: null,
+            testTrackSelect: null,
+            testTireSelect: null,
+            testWeatherSelect: null,
+            testDifficultySelect: null
         };
 
-        this.playerPilot = F1.drivers[Math.floor(Math.random() * F1.drivers.length)];
-        this.playerTeam = F1.teams.find(t => t.name === this.playerPilot.team);
+        // Инициализация чемпионата
+        F1.drivers.forEach(d => this.championship[d.name] = 0);
+        F1.teams.forEach(t => this.constructorsChamp[t.name] = 0);
+    }
 
-        this.renderGarage();
+    // ─── ИНИЦИАЛИЗАЦИЯ ИГРЫ ─────────────────────────────────────
+    initGame() {
         this.setupNavigation();
-        this.setupFAQ();
-        this.renderStandings();
-        this.setupSimulator();
+        this.renderGarage();
         this.setupGarageChat();
-        this.setupGame();
+        this.setupSimulator();
         this.setupTestDrive();
+        this.setupGame();
+        this.renderStandings();
         this.updateStats();
-
-        console.log('🏎️ Pit Wall Pulse 7.0 ULTIMATE загружен!');
-        console.log(`👤 Пилот: ${this.playerPilot.name} (${this.playerTeam.name})`);
-        console.log(`🏁 Всего Гран-при: ${this.totalRounds}`);
+        this.startSeason();
     }
 
     // ============================================================
-    // НАВИГАЦИЯ
+    // 3. НАВИГАЦИЯ
     // ============================================================
     setupNavigation() {
-        const links = document.querySelectorAll('.nav-links a');
-        const sections = document.querySelectorAll('.section');
-        const toggle = document.getElementById('navToggle');
+        const links = this.els.navLinks;
+        const sections = this.els.sections;
+        const toggle = this.els.navToggle;
         const navLinks = document.getElementById('navLinks');
 
         links.forEach(link => {
@@ -296,15 +358,15 @@ class PitWallPulse {
                 link.classList.add('active');
                 sections.forEach(s => s.classList.remove('active'));
                 document.getElementById(target).classList.add('active');
-                if (window.innerWidth <= 768) navLinks.classList.remove('show');
+                if (window.innerWidth <= 768) navLinks?.classList.remove('show');
             });
         });
 
-        toggle.addEventListener('click', () => navLinks.classList.toggle('show'));
+        toggle?.addEventListener('click', () => navLinks?.classList.toggle('show'));
 
-        this.els.startGameBtn.addEventListener('click', (e) => {
+        this.els.startGameBtn?.addEventListener('click', (e) => {
             e.preventDefault();
-            document.querySelector('.nav-links a[href="#game"]').click();
+            document.querySelector('.nav-links a[href="#game"]')?.click();
         });
 
         document.querySelectorAll('.tab').forEach(tab => {
@@ -319,22 +381,12 @@ class PitWallPulse {
     }
 
     // ============================================================
-    // FAQ
-    // ============================================================
-    setupFAQ() {
-        document.querySelectorAll('.faq-q').forEach(q => {
-            q.addEventListener('click', function() {
-                this.nextElementSibling.classList.toggle('show');
-                this.classList.toggle('open');
-            });
-        });
-    }
-
-    // ============================================================
-    // ГАРАЖ
+    // 4. ГАРАЖ
     // ============================================================
     renderGarage() {
+        // Пилоты
         const pilotContainer = this.els.pilotList;
+        if (!pilotContainer) return;
         pilotContainer.innerHTML = '';
         F1.drivers.forEach(d => {
             const btn = document.createElement('button');
@@ -352,7 +404,9 @@ class PitWallPulse {
             pilotContainer.appendChild(btn);
         });
 
+        // Команды
         const teamContainer = this.els.teamList;
+        if (!teamContainer) return;
         teamContainer.innerHTML = '';
         F1.teams.forEach(t => {
             const btn = document.createElement('button');
@@ -380,6 +434,7 @@ class PitWallPulse {
             teamContainer.appendChild(btn);
         });
 
+        // Шины
         document.querySelectorAll('.tire-opt').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.tire-opt').forEach(b => b.classList.remove('active'));
@@ -391,7 +446,7 @@ class PitWallPulse {
                     medium: 'Медиум: баланс скорости и износа',
                     hard: 'Хард: -10% скорость, долгий износ'
                 };
-                info.textContent = tireData[this.selectedTire] || tireData.medium;
+                if (info) info.textContent = tireData[this.selectedTire] || tireData.medium;
                 this.addGarageMessage('Инженер', `Выбрана стратегия: ${tireData[this.selectedTire]}`);
             });
         });
@@ -399,6 +454,7 @@ class PitWallPulse {
 
     addGarageMessage(who, text) {
         const chat = this.els.garageChat;
+        if (!chat) return;
         const msg = document.createElement('div');
         msg.className = 'msg';
         msg.innerHTML = `<span class="name">${who}:</span> ${text}`;
@@ -408,8 +464,11 @@ class PitWallPulse {
     }
 
     setupGarageChat() {
-        this.els.garageSend.addEventListener('click', () => {
-            const input = this.els.garageInput;
+        const sendBtn = this.els.garageSend;
+        const input = this.els.garageInput;
+        if (!sendBtn || !input) return;
+
+        sendBtn.addEventListener('click', () => {
             const text = input.value.trim();
             if (text) {
                 this.addGarageMessage('Вы', text);
@@ -420,13 +479,14 @@ class PitWallPulse {
                 }, 500 + Math.random() * 500);
             }
         });
-        this.els.garageInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') this.els.garageSend.click();
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendBtn.click();
         });
     }
 
     // ============================================================
-    // СИМУЛЯТОР (КЛИКАЛКА)
+    // 5. СИМУЛЯТОР (КЛИКАЛКА)
     // ============================================================
     setupSimulator() {
         let simInterval = null;
@@ -434,6 +494,7 @@ class PitWallPulse {
         const display = this.els.simDisplay;
         const startBtn = this.els.simStart;
         const stopBtn = this.els.simStop;
+        if (!display || !startBtn || !stopBtn) return;
 
         startBtn.addEventListener('click', () => {
             simScore = 0;
@@ -466,67 +527,67 @@ class PitWallPulse {
     }
 
     // ============================================================
-    // ТЕСТОВЫЙ ЗАЕЗД — ПОЛНОЦЕННАЯ ТРЕНИРОВКА
+    // 6. ТЕСТОВЫЙ ЗАЕЗД
     // ============================================================
     setupTestDrive() {
         const garageGrid = document.querySelector('.garage-grid');
-        if (garageGrid && !document.getElementById('testDriveCard')) {
-            const testCard = document.createElement('div');
-            testCard.className = 'garage-card test-drive-card';
-            testCard.id = 'testDriveCard';
-            testCard.innerHTML = `
-                <div class="card-title">🏎️ ТЕСТОВЫЙ ЗАЕЗД</div>
-                <div class="test-controls">
-                    <select id="testTrackSelect" class="test-select">
-                        ${F1.tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
-                    </select>
-                    <select id="testTireSelect" class="test-select">
-                        <option value="soft">🟥 Софт</option>
-                        <option value="medium" selected>🟨 Медиум</option>
-                        <option value="hard">⬜ Хард</option>
-                    </select>
-                    <select id="testWeatherSelect" class="test-select">
-                        <option value="sunny">☀️ Сухо</option>
-                        <option value="rainy">🌧️ Дождь</option>
-                        <option value="storm">⛈️ Ливень</option>
-                    </select>
-                    <select id="testDifficultySelect" class="test-select">
-                        <option value="easy">🟢 Лёгкая</option>
-                        <option value="medium" selected>🟡 Средняя</option>
-                        <option value="hard">🟠 Сложная</option>
-                        <option value="expert">🔴 Эксперт</option>
-                    </select>
-                    <div class="test-buttons">
-                        <button class="sim-btn start" id="testStart">▶ Старт</button>
-                        <button class="sim-btn stop" id="testStop">⏹ Стоп</button>
-                    </div>
-                </div>
-                <div class="test-stats">
-                    <div class="test-stat"><span>Круг</span><span id="testLapDisplay">0/15</span></div>
-                    <div class="test-stat"><span>Лучший</span><span id="testBestDisplay">--:--</span></div>
-                    <div class="test-stat"><span>Скорость</span><span id="testSpeedDisplay">0</span></div>
-                    <div class="test-stat"><span>Уверенность</span><span id="testConfidenceDisplay">50%</span></div>
-                </div>
-                <div class="test-resources">
-                    <div class="test-resource"><span>⚡ ERS</span><div class="test-bar"><div class="test-fill ers" id="testErsBar" style="width:85%"></div></div><span id="testErsValue">85%</span></div>
-                    <div class="test-resource"><span>⏳ ШИНЫ</span><div class="test-bar"><div class="test-fill tyre" id="testTyreBar" style="width:70%"></div></div><span id="testTyreValue">70%</span></div>
-                    <div class="test-resource"><span>⛽ ТОПЛИВО</span><div class="test-bar"><div class="test-fill fuel" id="testFuelBar" style="width:90%"></div></div><span id="testFuelValue">90%</span></div>
-                    <div class="test-resource"><span>💪 ЭНЕРГИЯ</span><div class="test-bar"><div class="test-fill energy" id="testEnergyBar" style="width:100%"></div></div><span id="testEnergyValue">100%</span></div>
-                </div>
-                <div id="testStatus" class="test-status">Выбери настройки и нажми «Старт» для тренировки</div>
-                <div class="test-actions">
-                    <button class="btn-race attack" id="testAttack"><span>⚡</span> Атака</button>
-                    <button class="btn-race conserve" id="testConserve"><span>🛡️</span> Эконом</button>
-                    <button class="btn-race box" id="testBox"><span>🔧</span> Пит</button>
-                </div>
-                <div id="testChat" class="test-chat">
-                    <div class="test-chat-msg system">🏁 Нажми «Старт» для тренировки</div>
-                </div>
-            `;
-            garageGrid.appendChild(testCard);
-        }
+        if (!garageGrid || document.getElementById('testDriveCard')) return;
 
-        // Обновляем ссылки
+        const testCard = document.createElement('div');
+        testCard.className = 'garage-card test-drive-card';
+        testCard.id = 'testDriveCard';
+        testCard.innerHTML = `
+            <div class="card-title">🏎️ ТЕСТОВЫЙ ЗАЕЗД</div>
+            <div class="test-controls">
+                <select id="testTrackSelect" class="test-select">
+                    ${F1.tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+                </select>
+                <select id="testTireSelect" class="test-select">
+                    <option value="soft">🟥 Софт</option>
+                    <option value="medium" selected>🟨 Медиум</option>
+                    <option value="hard">⬜ Хард</option>
+                </select>
+                <select id="testWeatherSelect" class="test-select">
+                    <option value="sunny">☀️ Сухо</option>
+                    <option value="rainy">🌧️ Дождь</option>
+                    <option value="storm">⛈️ Ливень</option>
+                </select>
+                <select id="testDifficultySelect" class="test-select">
+                    <option value="easy">🟢 Лёгкая</option>
+                    <option value="medium" selected>🟡 Средняя</option>
+                    <option value="hard">🟠 Сложная</option>
+                    <option value="expert">🔴 Эксперт</option>
+                </select>
+                <div class="test-buttons">
+                    <button class="sim-btn start" id="testStart">▶ Старт</button>
+                    <button class="sim-btn stop" id="testStop">⏹ Стоп</button>
+                </div>
+            </div>
+            <div class="test-stats">
+                <div class="test-stat"><span>Круг</span><span id="testLapDisplay">0/15</span></div>
+                <div class="test-stat"><span>Лучший</span><span id="testBestDisplay">--:--</span></div>
+                <div class="test-stat"><span>Скорость</span><span id="testSpeedDisplay">0</span></div>
+                <div class="test-stat"><span>Уверенность</span><span id="testConfidenceDisplay">50%</span></div>
+            </div>
+            <div class="test-resources">
+                <div class="test-resource"><span>⚡ ERS</span><div class="test-bar"><div class="test-fill ers" id="testErsBar" style="width:85%"></div></div><span class="test-value" id="testErsValue">85%</span></div>
+                <div class="test-resource"><span>⏳ ШИНЫ</span><div class="test-bar"><div class="test-fill tyre" id="testTyreBar" style="width:70%"></div></div><span class="test-value" id="testTyreValue">70%</span></div>
+                <div class="test-resource"><span>⛽ ТОПЛИВО</span><div class="test-bar"><div class="test-fill fuel" id="testFuelBar" style="width:90%"></div></div><span class="test-value" id="testFuelValue">90%</span></div>
+                <div class="test-resource"><span>💪 ЭНЕРГИЯ</span><div class="test-bar"><div class="test-fill energy" id="testEnergyBar" style="width:100%"></div></div><span class="test-value" id="testEnergyValue">100%</span></div>
+            </div>
+            <div id="testStatus" class="test-status">Выбери настройки и нажми «Старт» для тренировки</div>
+            <div class="test-actions">
+                <button class="btn-race attack" id="testAttack"><span>⚡</span> Атака</button>
+                <button class="btn-race conserve" id="testConserve"><span>🛡️</span> Эконом</button>
+                <button class="btn-race box" id="testBox"><span>🔧</span> Пит</button>
+            </div>
+            <div id="testChat" class="test-chat">
+                <div class="test-chat-msg system">🏁 Нажми «Старт» для тренировки</div>
+            </div>
+        `;
+        garageGrid.appendChild(testCard);
+
+        // Сохраняем ссылки
         this.els.testTrackSelect = document.getElementById('testTrackSelect');
         this.els.testTireSelect = document.getElementById('testTireSelect');
         this.els.testWeatherSelect = document.getElementById('testWeatherSelect');
@@ -551,15 +612,14 @@ class PitWallPulse {
         this.els.testBox = document.getElementById('testBox');
         this.els.testChat = document.getElementById('testChat');
 
+        // Обработчики
         if (this.els.testStart) {
             this.els.testStart.addEventListener('click', () => this.startTestDrive());
             this.els.testStop.addEventListener('click', () => this.stopTestDrive());
             this.els.testStop.disabled = true;
-            
             this.els.testAttack.addEventListener('click', () => this.testAction('attack'));
             this.els.testConserve.addEventListener('click', () => this.testAction('conserve'));
             this.els.testBox.addEventListener('click', () => this.testAction('box'));
-            
             this.els.testAttack.disabled = true;
             this.els.testConserve.disabled = true;
             this.els.testBox.disabled = true;
@@ -567,39 +627,29 @@ class PitWallPulse {
     }
 
     startTestDrive() {
-        if (this.testState.running) return;
+        if (this.test.running) return;
         
         const trackId = this.els.testTrackSelect?.value || 'monza';
-        this.testState.track = F1.tracks.find(t => t.id === trackId) || F1.tracks[0];
-        this.testState.tire = this.els.testTireSelect?.value || 'medium';
+        this.test.track = F1.tracks.find(t => t.id === trackId) || F1.tracks[0];
+        this.test.tire = this.els.testTireSelect?.value || 'medium';
         const weatherId = this.els.testWeatherSelect?.value || 'sunny';
-        this.testState.weather = F1.weathers.find(w => w.id === weatherId) || F1.weathers[0];
+        this.test.weather = F1.weathers.find(w => w.id === weatherId) || F1.weathers[0];
         const diffId = this.els.testDifficultySelect?.value || 'medium';
-        this.testState.difficulty = F1.difficulties.find(d => d.id === diffId) || F1.difficulties[1];
+        this.test.difficulty = F1.difficulties.find(d => d.id === diffId) || F1.difficulties[1];
         
-        // Сброс состояния
-        this.testState.running = true;
-        this.testState.lap = 0;
-        this.testState.maxLaps = 15;
-        this.testState.done = false;
-        this.testState.ers = 85 + Math.random() * 10;
-        this.testState.tyre = 70 + Math.random() * 15;
-        this.testState.fuel = 90 + Math.random() * 8;
-        this.testState.energy = 100;
-        this.testState.fastestLap = false;
-        this.testState.fastestLapTime = 999;
-        this.testState.pitStops = 0;
-        this.testState.penalties = 0;
-        this.testState.penaltyHistory = [];
-        this.testState.bestLap = 999;
-        this.testState.lapTimes = [];
-        this.testState.score = 0;
-        this.testState.waiting = false;
-        this.testState.chatMessages = [];
+        this.test.running = true;
+        this.test.lap = 0;
+        this.test.done = false;
+        this.test.ers = 85 + Math.random() * 10;
+        this.test.tyre = 70 + Math.random() * 15;
+        this.test.fuel = 90 + Math.random() * 8;
+        this.test.energy = 100;
+        this.test.bestLap = 999;
+        this.test.pitStops = 0;
+        this.test.waiting = false;
         
-        // Применяем шины
         const tireMap = { soft: 15, medium: 0, hard: -15 };
-        this.testState.tyre = Math.min(100, this.testState.tyre + tireMap[this.testState.tire] || 0);
+        this.test.tyre = Math.min(100, this.test.tyre + tireMap[this.test.tire] || 0);
         
         this.els.testStart.disabled = true;
         this.els.testStop.disabled = false;
@@ -607,108 +657,97 @@ class PitWallPulse {
         this.els.testConserve.disabled = false;
         this.els.testBox.disabled = false;
         
-        this.els.testStatus.textContent = `🏁 Тренировка на ${this.testState.track.name} | ${this.testState.weather.label} | ${this.testState.tire.toUpperCase()} | ${this.testState.difficulty.label}`;
+        this.els.testStatus.textContent = `🏁 Тренировка на ${this.test.track.name} | ${this.test.weather.label} | ${this.test.tire.toUpperCase()} | ${this.test.difficulty.label}`;
         this.els.testStatus.style.color = '#4FC3F7';
-        this.els.testChat.innerHTML = `<div class="test-chat-msg system">🏁 Начало тренировки! Управляй машиной.</div>`;
+        this.els.testChat.innerHTML = `<div class="test-chat-msg system">🏁 Начало тренировки!</div>`;
         
-        this.addGarageMessage('Инженер', `🏁 Тренировка на ${this.testState.track.name} (${this.testState.tire}, ${this.testState.difficulty.label})`);
+        this.addGarageMessage('Инженер', `🏁 Тренировка на ${this.test.track.name} (${this.test.tire}, ${this.test.difficulty.label})`);
         
-        // Таймер — автоматический прогресс кругов
-        if (this.testState.timer) clearInterval(this.testState.timer);
-        this.testState.timer = setInterval(() => {
-            if (!this.testState.done && this.testState.running) {
+        if (this.test.timer) clearInterval(this.test.timer);
+        this.test.timer = setInterval(() => {
+            if (!this.test.done && this.test.running) {
                 this.testAutoProgress();
             }
-        }, 1500);
+        }, 1400);
     }
 
     testAutoProgress() {
-        if (this.testState.done || this.testState.waiting) return;
+        if (this.test.done || this.test.waiting) return;
+        this.test.lap++;
         
-        this.testState.lap++;
-        
-        // Расход ресурсов
-        const diffFactor = this.testState.difficulty.speed;
-        const weatherFactor = this.testState.weather.grip;
+        const diffFactor = this.test.difficulty.speed;
+        const weatherFactor = this.test.weather.grip;
         const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
-        const tireWear = tireMap[this.testState.tire] || 0.7;
+        const tireWear = tireMap[this.test.tire] || 0.7;
         
-        this.testState.tyre = Math.max(0, this.testState.tyre - (0.5 + Math.random() * 1.5) * diffFactor * (this.testState.weather.rain > 0.5 ? 1.5 : 1));
-        this.testState.fuel = Math.max(0, this.testState.fuel - (0.3 + Math.random() * 1) * diffFactor);
-        this.testState.energy = Math.max(0, this.testState.energy - 0.5 - Math.random() * 1);
-        this.testState.ers = Math.min(100, this.testState.ers + 0.5 + Math.random() * 0.5);
+        this.test.tyre = Math.max(0, this.test.tyre - (0.5 + Math.random() * 1.5) * diffFactor);
+        this.test.fuel = Math.max(0, this.test.fuel - (0.3 + Math.random() * 1) * diffFactor);
+        this.test.energy = Math.max(0, this.test.energy - 0.5 - Math.random() * 1);
+        this.test.ers = Math.min(100, this.test.ers + 0.5 + Math.random() * 0.5);
         
-        // Время круга
         const baseTime = 70 + Math.random() * 20;
-        const lapTime = (baseTime * tireMap[this.testState.tire] * diffFactor) / (this.testState.track.speed * weatherFactor) + Math.random() * 0.5;
+        const lapTime = (baseTime * tireMap[this.test.tire] * diffFactor) / (this.test.track.speed * weatherFactor) + Math.random() * 0.5;
         
-        this.testState.lapTimes.push(lapTime);
-        if (lapTime < this.testState.bestLap) {
-            this.testState.bestLap = lapTime;
-            this.testState.fastestLap = true;
+        if (lapTime < this.test.bestLap) {
+            this.test.bestLap = lapTime;
             this.addTestChat('🏆', `Новый лучший круг! ${lapTime.toFixed(3)}с`, 'best');
         }
         
-        // Обновляем UI
-        this.els.testLapDisplay.textContent = `${this.testState.lap}/${this.testState.maxLaps}`;
-        this.els.testBestDisplay.textContent = this.testState.bestLap < 999 ? `${this.testState.bestLap.toFixed(3)}с` : '--:--';
+        this.els.testLapDisplay.textContent = `${this.test.lap}/${this.test.maxLaps}`;
+        this.els.testBestDisplay.textContent = this.test.bestLap < 999 ? `${this.test.bestLap.toFixed(3)}с` : '--:--';
         
-        // Скорость (визуализация)
         const speed = Math.round((80 / (lapTime + 10)) * 100 + 50);
         this.els.testSpeedDisplay.textContent = speed;
         
-        // Обновляем ресурсы
         this.updateTestResources();
         
-        // Проверка прокола
-        if (this.testState.tyre < 10 && Math.random() < 0.1) {
-            this.addTestChat('💥', `ПРОКОЛ! Срочно в боксы!`, 'penalty');
-            this.testState.tyre = 5;
-            this.testState.energy = Math.max(0, this.testState.energy - 20);
+        if (this.test.tyre < 10 && Math.random() < 0.1) {
+            this.addTestChat('💥', 'ПРОКОЛ! Срочно в боксы!', 'penalty');
+            this.test.tyre = 5;
+            this.test.energy = Math.max(0, this.test.energy - 20);
         }
         
-        // Проверка завершения
-        if (this.testState.lap >= this.testState.maxLaps) {
+        if (this.test.lap >= this.test.maxLaps) {
             this.stopTestDrive();
         }
     }
 
     testAction(action) {
-        if (this.testState.done || this.testState.waiting || !this.testState.running) return;
-        this.testState.waiting = true;
+        if (this.test.done || this.test.waiting || !this.test.running) return;
+        this.test.waiting = true;
         this.els.testAttack.disabled = true;
         this.els.testConserve.disabled = true;
         this.els.testBox.disabled = true;
         
-        const diffFactor = this.testState.difficulty.speed;
-        const weatherFactor = this.testState.weather.grip;
+        const diffFactor = this.test.difficulty.speed;
+        const weatherFactor = this.test.weather.grip;
         const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
-        const tireWear = tireMap[this.testState.tire] || 0.7;
+        const tireWear = tireMap[this.test.tire] || 0.7;
         
         if (action === 'attack') {
-            this.testState.ers = Math.max(0, this.testState.ers - (5 + Math.random() * 4) * diffFactor * weatherFactor);
-            this.testState.tyre = Math.max(0, this.testState.tyre - (3 + Math.random() * 3) * tireWear);
-            this.testState.fuel = Math.max(0, this.testState.fuel - (2 + Math.random() * 2) * diffFactor);
-            this.testState.energy = Math.max(0, this.testState.energy - 3 - Math.random() * 4);
-            this.addTestChat('⚡', `Атака! Расход ресурсов увеличен.`, 'action');
+            this.test.ers = Math.max(0, this.test.ers - (5 + Math.random() * 4) * diffFactor * weatherFactor);
+            this.test.tyre = Math.max(0, this.test.tyre - (3 + Math.random() * 3) * tireWear);
+            this.test.fuel = Math.max(0, this.test.fuel - (2 + Math.random() * 2) * diffFactor);
+            this.test.energy = Math.max(0, this.test.energy - 3 - Math.random() * 4);
+            this.addTestChat('⚡', 'Атака! Расход ресурсов увеличен.', 'action');
         } else if (action === 'conserve') {
-            this.testState.ers = Math.min(100, this.testState.ers + (2 + Math.random() * 2) * diffFactor);
-            this.testState.tyre = Math.min(100, this.testState.tyre + (1 + Math.random() * 2));
-            this.testState.fuel = Math.max(0, this.testState.fuel - (0.5 + Math.random() * 1));
-            this.testState.energy = Math.min(100, this.testState.energy + 2 + Math.random() * 3);
+            this.test.ers = Math.min(100, this.test.ers + (2 + Math.random() * 2) * diffFactor);
+            this.test.tyre = Math.min(100, this.test.tyre + (1 + Math.random() * 2));
+            this.test.fuel = Math.max(0, this.test.fuel - (0.5 + Math.random() * 1));
+            this.test.energy = Math.min(100, this.test.energy + 2 + Math.random() * 3);
             this.addTestChat('🛡️', 'Экономия! Ресурсы восстанавливаются.', 'action');
         } else if (action === 'box') {
-            this.testState.pitStops++;
-            this.testState.tyre = Math.min(100, this.testState.tyre + 25 + Math.random() * 20);
-            this.testState.ers = Math.min(100, this.testState.ers + 2 + Math.random() * 5);
-            this.testState.fuel = Math.max(0, this.testState.fuel - (3 + Math.random() * 2));
-            this.testState.energy = Math.min(100, this.testState.energy + 8);
-            this.addTestChat('🔧', `Пит-стоп #${this.testState.pitStops}! Шины заменены.`, 'action');
+            this.test.pitStops++;
+            this.test.tyre = Math.min(100, this.test.tyre + 25 + Math.random() * 20);
+            this.test.ers = Math.min(100, this.test.ers + 2 + Math.random() * 5);
+            this.test.fuel = Math.max(0, this.test.fuel - (3 + Math.random() * 2));
+            this.test.energy = Math.min(100, this.test.energy + 8);
+            this.addTestChat('🔧', `Пит-стоп #${this.test.pitStops}! Шины заменены.`, 'action');
         }
         
         this.updateTestResources();
         
-        this.testState.waiting = false;
+        this.test.waiting = false;
         this.els.testAttack.disabled = false;
         this.els.testConserve.disabled = false;
         this.els.testBox.disabled = false;
@@ -716,6 +755,7 @@ class PitWallPulse {
 
     addTestChat(icon, text, type = 'system') {
         const container = this.els.testChat;
+        if (!container) return;
         const msg = document.createElement('div');
         msg.className = `test-chat-msg ${type}`;
         msg.textContent = `${icon} ${text}`;
@@ -725,56 +765,62 @@ class PitWallPulse {
     }
 
     updateTestResources() {
-        this.els.testErsBar.style.width = Math.min(100, Math.max(0, this.testState.ers)) + '%';
-        this.els.testTyreBar.style.width = Math.min(100, Math.max(0, this.testState.tyre)) + '%';
-        this.els.testFuelBar.style.width = Math.min(100, Math.max(0, this.testState.fuel)) + '%';
-        this.els.testEnergyBar.style.width = Math.min(100, Math.max(0, this.testState.energy)) + '%';
-        this.els.testErsValue.textContent = Math.round(Math.min(100, Math.max(0, this.testState.ers))) + '%';
-        this.els.testTyreValue.textContent = Math.round(Math.min(100, Math.max(0, this.testState.tyre))) + '%';
-        this.els.testFuelValue.textContent = Math.round(Math.min(100, Math.max(0, this.testState.fuel))) + '%';
-        this.els.testEnergyValue.textContent = Math.round(Math.min(100, Math.max(0, this.testState.energy))) + '%';
-        
-        // Уверенность
+        const t = this.test;
+        if (this.els.testErsBar) {
+            this.els.testErsBar.style.width = Math.min(100, Math.max(0, t.ers)) + '%';
+            this.els.testTyreBar.style.width = Math.min(100, Math.max(0, t.tyre)) + '%';
+            this.els.testFuelBar.style.width = Math.min(100, Math.max(0, t.fuel)) + '%';
+            this.els.testEnergyBar.style.width = Math.min(100, Math.max(0, t.energy)) + '%';
+            this.els.testErsValue.textContent = Math.round(Math.min(100, Math.max(0, t.ers))) + '%';
+            this.els.testTyreValue.textContent = Math.round(Math.min(100, Math.max(0, t.tyre))) + '%';
+            this.els.testFuelValue.textContent = Math.round(Math.min(100, Math.max(0, t.fuel))) + '%';
+            this.els.testEnergyValue.textContent = Math.round(Math.min(100, Math.max(0, t.energy))) + '%';
+        }
         this.confidence = Math.min(100, this.confidence + 0.1);
-        this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+        if (this.els.testConfidenceDisplay) {
+            this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+        }
     }
 
     stopTestDrive() {
-        this.testState.running = false;
-        this.testState.done = true;
-        if (this.testState.timer) {
-            clearInterval(this.testState.timer);
-            this.testState.timer = null;
+        this.test.running = false;
+        this.test.done = true;
+        if (this.test.timer) {
+            clearInterval(this.test.timer);
+            this.test.timer = null;
         }
         
-        this.els.testStart.disabled = false;
-        this.els.testStop.disabled = true;
-        this.els.testAttack.disabled = true;
-        this.els.testConserve.disabled = true;
-        this.els.testBox.disabled = true;
+        if (this.els.testStart) {
+            this.els.testStart.disabled = false;
+            this.els.testStop.disabled = true;
+            this.els.testAttack.disabled = true;
+            this.els.testConserve.disabled = true;
+            this.els.testBox.disabled = true;
+        }
         
-        if (this.testState.lapTimes.length > 0) {
-            const avg = this.testState.lapTimes.reduce((a, b) => a + b, 0) / this.testState.lapTimes.length;
-            const best = this.testState.bestLap;
-            
+        if (this.test.bestLap < 999) {
+            const best = this.test.bestLap;
             let grade = 'Нужно тренироваться!';
             let emoji = '📈';
-            if (best < 75 && avg < 85) { grade = '🔥 Отлично! Ты готов к гонке!'; emoji = '🏆'; }
-            else if (best < 85 && avg < 95) { grade = '💪 Хорошо! Есть потенциал!'; emoji = '💪'; }
+            if (best < 75) { grade = '🔥 Отлично! Ты готов к гонке!'; emoji = '🏆'; }
+            else if (best < 85) { grade = '💪 Хорошо! Есть потенциал!'; emoji = '💪'; }
             else if (best < 100) { grade = '👍 Неплохо, но можно лучше!'; emoji = '📈'; }
             
-            this.els.testStatus.textContent = `✅ Тренировка завершена! ${emoji} ${grade}`;
-            this.els.testStatus.style.color = '#00E676';
+            if (this.els.testStatus) {
+                this.els.testStatus.textContent = `✅ Тренировка завершена! ${emoji} ${grade}`;
+                this.els.testStatus.style.color = '#00E676';
+            }
             
-            this.addTestChat('📊', `Лучший круг: ${best.toFixed(3)}с, средний: ${avg.toFixed(3)}с — ${grade}`, 'system');
-            this.addGarageMessage('Инженер', `📊 Тренировка на ${this.testState.track.name}: лучший круг ${best.toFixed(3)}с — ${grade}`);
+            this.addTestChat('📊', `Лучший круг: ${best.toFixed(3)}с — ${grade}`, 'system');
+            this.addGarageMessage('Инженер', `📊 Тренировка: лучший круг ${best.toFixed(3)}с — ${grade}`);
             
-            // Бонус к уверенности
             if (best < 85) {
                 this.confidence = Math.min(100, this.confidence + 10);
-                this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+                if (this.els.testConfidenceDisplay) {
+                    this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+                }
             }
-        } else {
+        } else if (this.els.testStatus) {
             this.els.testStatus.textContent = '⏹ Тренировка остановлена';
             this.els.testStatus.style.color = '#FF6B35';
         }
@@ -783,81 +829,37 @@ class PitWallPulse {
     }
 
     // ============================================================
-    // СТАТИСТИКА
-    // ============================================================
-    updateStats() {
-        this.els.statRaces.textContent = this.stats.races;
-        this.els.statWins.textContent = this.stats.wins;
-        this.els.statPodiums.textContent = this.stats.podiums;
-        this.els.statPoints.textContent = this.stats.points;
-        this.els.statFastest.textContent = this.stats.fastestLaps;
-    }
-
-    // ============================================================
-    // ЗАЧЁТ
-    // ============================================================
-    renderStandings() {
-        const sorted = Object.entries(this.championship).sort((a, b) => b[1] - a[1]).slice(0, 20);
-        let html = `<div class="standings-table"><div class="st-header"><span>POS</span><span>DRIVER</span><span>TEAM</span><span>PTS</span></div>`;
-        sorted.forEach(([name, pts], i) => {
-            const driver = F1.drivers.find(d => d.name === name);
-            const isPlayer = name === this.playerPilot?.name;
-            html += `<div class="st-row ${i === 0 ? 'leader' : ''} ${isPlayer ? 'player' : ''}">
-                <span class="st-pos ${i < 3 ? 'top3' : ''} ${i === 0 ? 'p1' : ''}">${i + 1}</span>
-                <span class="st-name">${isPlayer ? '★ ' : ''}${name}</span>
-                <span class="st-team">${driver ? driver.team : '—'}</span>
-                <span class="st-pts">${pts}</span>
-            </div>`;
-        });
-        html += '</div>';
-        this.els.driversStandings.innerHTML = html;
-
-        const cSorted = Object.entries(this.constructorsChamp).sort((a, b) => b[1] - a[1]).slice(0, 11);
-        let cHtml = `<div class="standings-table"><div class="st-header"><span>POS</span><span>TEAM</span><span>PTS</span></div>`;
-        cSorted.forEach(([name, pts], i) => {
-            const isPlayer = name === this.playerTeam?.name;
-            cHtml += `<div class="st-row ${i === 0 ? 'leader' : ''} ${isPlayer ? 'player' : ''}">
-                <span class="st-pos ${i < 3 ? 'top3' : ''} ${i === 0 ? 'p1' : ''}">${i + 1}</span>
-                <span class="st-name">${isPlayer ? '★ ' : ''}${name}</span>
-                <span class="st-pts">${pts}</span>
-            </div>`;
-        });
-        cHtml += '</div>';
-        this.els.constructorsStandings.innerHTML = cHtml;
-    }
-
-    // ============================================================
-    // ИГРА
+    // 7. ИГРА (ОСНОВНАЯ ЛОГИКА)
     // ============================================================
     setupGame() {
-        this.els.btnGas.addEventListener('click', () => this.handleGas());
-        this.els.btnAttack.addEventListener('click', () => this.handleAction('attack'));
-        this.els.btnConserve.addEventListener('click', () => this.handleAction('conserve'));
-        this.els.btnBox.addEventListener('click', () => this.handleAction('box'));
-        this.els.btnStewards.addEventListener('click', () => this.handleAction('penalty'));
-        this.els.btnTires.addEventListener('click', () => {
-            this.els.tireSelect.style.display = this.els.tireSelect.style.display === 'none' ? 'grid' : 'none';
+        this.els.btnGas?.addEventListener('click', () => this.handleGas());
+        this.els.btnAttack?.addEventListener('click', () => this.handleAction('attack'));
+        this.els.btnConserve?.addEventListener('click', () => this.handleAction('conserve'));
+        this.els.btnBox?.addEventListener('click', () => this.handleAction('box'));
+        this.els.btnStewards?.addEventListener('click', () => this.handleAction('penalty'));
+        this.els.btnTires?.addEventListener('click', () => {
+            if (this.els.tireSelect) {
+                this.els.tireSelect.style.display = this.els.tireSelect.style.display === 'none' ? 'grid' : 'none';
+            }
         });
-        this.els.btnStartRace.addEventListener('click', () => this.startRace());
+        this.els.btnStartRace?.addEventListener('click', () => this.startRace());
 
-        this.els.tireSelect.querySelectorAll('.tire-opt').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.els.tireSelect.querySelectorAll('.tire-opt').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.selectedTire = btn.dataset.tire;
-                this.addChat('Стратегия', `Переход на ${this.selectedTire}`, 'team');
+        if (this.els.tireSelect) {
+            this.els.tireSelect.querySelectorAll('.tire-opt').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this.els.tireSelect.querySelectorAll('.tire-opt').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    this.selectedTire = btn.dataset.tire;
+                    this.addChat('Стратегия', `Переход на ${this.selectedTire}`, 'team');
+                });
             });
-        });
+        }
 
-        this.els.btnNext.addEventListener('click', () => this.nextRound());
-        this.els.gameReset.addEventListener('click', () => this.resetGame());
-
-        this.startSeason();
+        this.els.btnNext?.addEventListener('click', () => this.nextRound());
+        this.els.gameReset?.addEventListener('click', () => this.resetGame());
     }
 
-    // ============================================================
-    // СЕЗОН
-    // ============================================================
+    // ─── СЕЗОН ─────────────────────────────────────────────────────
     startSeason() {
         this.currentRound = 0;
         this.championship = {};
@@ -865,7 +867,6 @@ class PitWallPulse {
         F1.drivers.forEach(d => this.championship[d.name] = 0);
         F1.teams.forEach(t => this.constructorsChamp[t.name] = 0);
         this.stats = { races: 0, wins: 0, podiums: 0, points: 0, fastestLaps: 0 };
-        this.raceHistory = [];
         this.pilotBoosts = { attack: 0, defense: 0, rain: 0, start: 0, fuel: 0, qualy: 0 };
         this.confidence = 50;
         this.updateStats();
@@ -878,90 +879,75 @@ class PitWallPulse {
         if (!calendar) return;
 
         const track = F1.tracks.find(t => t.id === calendar.trackId);
-        this.track = track;
-        this.maxLaps = track.laps || 40;
-        this.weather = F1.weathers[Math.floor(Math.random() * F1.weathers.length)];
+        this.race.track = track;
+        this.race.maxLaps = track.laps || 40;
+        this.race.weather = F1.weathers[Math.floor(Math.random() * F1.weathers.length)];
         this.weatherForecast = 3 + Math.floor(Math.random() * 4);
         this.weatherChange = false;
 
-        this.els.gameRound.textContent = `ЭТАП ${this.currentRound + 1}/${this.totalRounds}`;
-        this.els.gameTrack.textContent = track.name;
-        this.els.gameLap.textContent = `0 / ${this.maxLaps}`;
+        if (this.els.gameRound) this.els.gameRound.textContent = `ЭТАП ${this.currentRound + 1}/${this.totalRounds}`;
+        if (this.els.gameTrack) this.els.gameTrack.textContent = track.name;
+        if (this.els.gameLap) this.els.gameLap.textContent = `0 / ${this.race.maxLaps}`;
 
-        this.lap = 0;
-        this.done = false;
-        this.overtakes = [];
-        this.penalties = 0;
-        this.points = 0;
-        this.ers = 85 + Math.random() * 10;
-        this.tyre = 70 + Math.random() * 15;
-        this.fuel = 90 + Math.random() * 8;
-        this.energy = 100;
-        this.fastestLap = false;
-        this.fastestLapTime = 999;
-        this.pitStops = 0;
-        this.dotd = null;
-        this.penaltyHistory = [];
-        this.raceRunning = false;
+        this.race.lap = 0;
+        this.race.done = false;
+        this.race.overtakes = [];
+        this.race.penalties = 0;
+        this.race.points = 0;
+        this.race.ers = 85 + Math.random() * 10;
+        this.race.tyre = 70 + Math.random() * 15;
+        this.race.fuel = 90 + Math.random() * 8;
+        this.race.energy = 100;
+        this.race.fastestLap = false;
+        this.race.fastestLapTime = 999;
+        this.race.pitStops = 0;
+        this.race.dotd = null;
+        this.race.penaltyHistory = [];
+        this.race.running = false;
 
         this.applyBoostsToRace();
         this.generateGrid();
 
-        this.racePhase = 'qualy';
-        this.qualyClicks = 0;
-        this.qualyTime = 10;
-        this.qualyActive = true;
-        this.qualyDone = false;
+        this.phase = 'qualy';
+        this.qualy.clicks = 0;
+        this.qualy.time = 10;
+        this.qualy.active = true;
+        this.qualy.done = false;
 
-        this.els.qualyView.style.display = 'block';
-        this.els.raceView.style.display = 'none';
-        this.els.protocolView.style.display = 'none';
-        this.els.btnGas.disabled = false;
-        this.els.btnStartRace.disabled = true;
-        this.els.qualyTimer.textContent = '10.0с';
-        this.els.qualyClicks.textContent = '0 кликов';
+        if (this.els.qualyView) this.els.qualyView.style.display = 'block';
+        if (this.els.raceView) this.els.raceView.style.display = 'none';
+        if (this.els.protocolView) this.els.protocolView.style.display = 'none';
+        if (this.els.btnGas) this.els.btnGas.disabled = false;
+        if (this.els.btnStartRace) this.els.btnStartRace.disabled = true;
+        if (this.els.qualyTimer) this.els.qualyTimer.textContent = '10.0с';
+        if (this.els.qualyClicks) this.els.qualyClicks.textContent = '0 кликов';
 
         this.renderQualyGrid();
 
-        if (this.qualyTimer) clearInterval(this.qualyTimer);
-        this.qualyTimer = setInterval(() => {
-            this.qualyTime -= 0.1;
-            this.els.qualyTimer.textContent = `${this.qualyTime.toFixed(1)}с`;
-            if (this.qualyTime <= 0) {
-                clearInterval(this.qualyTimer);
+        if (this.qualy.timer) clearInterval(this.qualy.timer);
+        this.qualy.timer = setInterval(() => {
+            this.qualy.time -= 0.1;
+            if (this.els.qualyTimer) this.els.qualyTimer.textContent = `${this.qualy.time.toFixed(1)}с`;
+            if (this.qualy.time <= 0) {
+                clearInterval(this.qualy.timer);
                 this.finishQualifying();
             }
         }, 100);
 
-        this.els.chatMessages.innerHTML = '';
-        this.addChat('КВАЛИФИКАЦИЯ', `Начинается квалификация на Гран-при ${track.name}! Жми ГАЗ!`, 'qualy');
+        if (this.els.chatMessages) {
+            this.els.chatMessages.innerHTML = '';
+            this.addChat('КВАЛИФИКАЦИЯ', `Начинается квалификация на Гран-при ${track.name}! Жми ГАЗ!`, 'qualy');
+        }
     }
 
     applyBoostsToRace() {
-        if (this.pilotBoosts.attack > 0) {
-            this.ers = Math.min(100, this.ers + this.pilotBoosts.attack * 0.5);
-            this.addChat('БУСТ', `+${this.pilotBoosts.attack}% к атаке активен!`, 'press');
-        }
-        if (this.pilotBoosts.defense > 0) {
-            this.tyre = Math.min(100, this.tyre + this.pilotBoosts.defense * 0.3);
-            this.addChat('БУСТ', `+${this.pilotBoosts.defense}% к защите активен!`, 'press');
-        }
-        if (this.pilotBoosts.rain > 0 && this.weather.rain > 0.3) {
-            this.weather.grip = Math.min(1.0, this.weather.grip + this.pilotBoosts.rain * 0.01);
-            this.addChat('БУСТ', `+${this.pilotBoosts.rain}% сцепление в дождь!`, 'press');
-        }
-        if (this.pilotBoosts.start > 0) {
-            this.energy = Math.min(100, this.energy + this.pilotBoosts.start * 0.5);
-            this.addChat('БУСТ', `+${this.pilotBoosts.start}% на старте!`, 'press');
-        }
-        if (this.pilotBoosts.fuel > 0) {
-            this.fuel = Math.min(100, this.fuel + this.pilotBoosts.fuel * 0.5);
-            this.addChat('БУСТ', `-${this.pilotBoosts.fuel}% расход топлива!`, 'press');
-        }
-        if (this.pilotBoosts.qualy > 0) {
-            this.qualyClicks += Math.floor(this.pilotBoosts.qualy * 0.5);
-            this.addChat('БУСТ', `+${this.pilotBoosts.qualy}% в квалификации!`, 'press');
-        }
+        const b = this.pilotBoosts;
+        const r = this.race;
+        if (b.attack > 0) { r.ers = Math.min(100, r.ers + b.attack * 0.5); this.addChat('БУСТ', `+${b.attack}% к атаке!`, 'press'); }
+        if (b.defense > 0) { r.tyre = Math.min(100, r.tyre + b.defense * 0.3); this.addChat('БУСТ', `+${b.defense}% к защите!`, 'press'); }
+        if (b.rain > 0 && r.weather?.rain > 0.3) { r.weather.grip = Math.min(1.0, r.weather.grip + b.rain * 0.01); this.addChat('БУСТ', `+${b.rain}% в дождь!`, 'press'); }
+        if (b.start > 0) { r.energy = Math.min(100, r.energy + b.start * 0.5); this.addChat('БУСТ', `+${b.start}% на старте!`, 'press'); }
+        if (b.fuel > 0) { r.fuel = Math.min(100, r.fuel + b.fuel * 0.5); this.addChat('БУСТ', `-${b.fuel}% топлива!`, 'press'); }
     }
 
     generateGrid() {
@@ -970,14 +956,15 @@ class PitWallPulse {
             const j = Math.floor(Math.random() * (i + 1));
             [drivers[i], drivers[j]] = [drivers[j], drivers[i]];
         }
-        this.positions = drivers;
-        this.playerPos = drivers.indexOf(this.playerPilot) + 1;
+        this.race.positions = drivers;
+        this.race.playerPos = drivers.indexOf(this.playerPilot) + 1;
     }
 
     renderQualyGrid() {
         const container = this.els.qualyGrid;
+        if (!container) return;
         container.innerHTML = '';
-        this.positions.forEach((d, i) => {
+        this.race.positions.forEach((d, i) => {
             const isPlayer = d.name === this.playerPilot.name;
             const row = document.createElement('div');
             row.className = `qualy-row ${isPlayer ? 'player' : ''}`;
@@ -989,24 +976,26 @@ class PitWallPulse {
     }
 
     handleGas() {
-        if (!this.qualyActive || this.qualyDone) return;
-        this.qualyClicks++;
-        this.els.qualyClicks.textContent = `${this.qualyClicks} кликов`;
+        if (!this.qualy.active || this.qualy.done) return;
+        this.qualy.clicks++;
+        if (this.els.qualyClicks) this.els.qualyClicks.textContent = `${this.qualy.clicks} кликов`;
         const btn = this.els.btnGas;
-        btn.style.transform = 'scale(0.92)';
-        setTimeout(() => btn.style.transform = 'scale(1)', 50);
-        btn.innerHTML = `<span class="gas-icon">⏱️</span><span class="gas-label">ГАЗ</span><span class="gas-sub">${this.qualyClicks} кликов!</span>`;
-        const estimatedPos = Math.max(1, 20 - Math.floor(this.qualyClicks / 4));
-        this.els.qualyPosition.textContent = `Старт: P${estimatedPos}`;
+        if (btn) {
+            btn.style.transform = 'scale(0.92)';
+            setTimeout(() => btn.style.transform = 'scale(1)', 50);
+            btn.innerHTML = `<span class="gas-icon">⏱️</span><span class="gas-label">ГАЗ</span><span class="gas-sub">${this.qualy.clicks} кликов!</span>`;
+        }
+        const estimatedPos = Math.max(1, 20 - Math.floor(this.qualy.clicks / 4));
+        if (this.els.qualyPosition) this.els.qualyPosition.textContent = `Старт: P${estimatedPos}`;
     }
 
     finishQualifying() {
-        this.qualyActive = false;
-        this.qualyDone = true;
-        this.els.btnGas.disabled = true;
+        this.qualy.active = false;
+        this.qualy.done = true;
+        if (this.els.btnGas) this.els.btnGas.disabled = true;
 
         const allPilots = [...F1.drivers];
-        const playerClicks = this.qualyClicks;
+        const playerClicks = this.qualy.clicks;
         const aiClicks = allPilots.map(p => {
             if (p.name === this.playerPilot.name) return playerClicks;
             return Math.floor(Math.random() * 60) + 10 + Math.random() * 30;
@@ -1014,164 +1003,163 @@ class PitWallPulse {
 
         const sorted = allPilots.map((p, i) => ({ pilot: p, clicks: aiClicks[i] }));
         sorted.sort((a, b) => b.clicks - a.clicks);
-        this.positions = sorted.map(x => x.pilot);
-        this.playerPos = this.positions.indexOf(this.playerPilot) + 1;
+        this.race.positions = sorted.map(x => x.pilot);
+        this.race.playerPos = this.race.positions.indexOf(this.playerPilot) + 1;
 
-        this.addChat('КВАЛИФИКАЦИЯ', `${this.playerPilot.name} стартует P${this.playerPos}! (${this.qualyClicks} кликов)`, 'qualy');
+        this.addChat('КВАЛИФИКАЦИЯ', `${this.playerPilot.name} стартует P${this.race.playerPos}! (${this.qualy.clicks} кликов)`, 'qualy');
 
-        this.els.qualyView.style.display = 'none';
-        this.els.raceView.style.display = 'block';
-        this.els.btnStartRace.disabled = false;
-        this.els.chatMessages.innerHTML = '';
-        this.addChat('СИСТЕМА', `Квалификация завершена! Нажмите «Старт» для начала гонки.`, 'system');
+        if (this.els.qualyView) this.els.qualyView.style.display = 'none';
+        if (this.els.raceView) this.els.raceView.style.display = 'block';
+        if (this.els.btnStartRace) this.els.btnStartRace.disabled = false;
+        if (this.els.chatMessages) {
+            this.els.chatMessages.innerHTML = '';
+            this.addChat('СИСТЕМА', 'Квалификация завершена! Нажмите «Старт» для начала гонки.', 'system');
+        }
 
         this.renderLapTrack();
         this.renderRaceGrid();
         this.updateStatusBars();
     }
 
-    // ============================================================
-    // ЗАПУСК ГОНКИ
-    // ============================================================
+    // ─── ЗАПУСК ГОНКИ ─────────────────────────────────────────────
     startRace() {
-        if (this.raceRunning || this.done) return;
-        this.raceRunning = true;
-        this.els.btnStartRace.disabled = true;
+        if (this.race.running || this.race.done) return;
+        this.race.running = true;
+        if (this.els.btnStartRace) this.els.btnStartRace.disabled = true;
 
         const tireMap = { soft: 15, medium: 0, hard: -15 };
-        this.tyre = Math.min(100, this.tyre + tireMap[this.selectedTire] || 0);
+        this.race.tyre = Math.min(100, this.race.tyre + tireMap[this.selectedTire] || 0);
 
-        this.addChat('СТАРТ', `Гонка началась! ${this.maxLaps} кругов. ${this.selectedTire.toUpperCase()} шины.`, 'system');
+        this.addChat('СТАРТ', `Гонка началась! ${this.race.maxLaps} кругов. ${this.selectedTire.toUpperCase()} шины.`, 'system');
         this.addChat('ИНЖЕНЕР', 'Хороший старт! Действуй по плану.', 'engineer');
 
         document.querySelectorAll('.btn-race').forEach(b => b.disabled = false);
 
-        if (this.raceTimer) clearInterval(this.raceTimer);
-        this.raceTimer = setInterval(() => {
-            if (!this.done && this.raceRunning) {
+        if (this.race.timer) clearInterval(this.race.timer);
+        this.race.timer = setInterval(() => {
+            if (!this.race.done && this.race.running) {
                 this.autoProgress();
             }
-        }, 1200);
+        }, 1100);
     }
 
     autoProgress() {
-        if (this.done || this.waiting || this.lap >= this.maxLaps) return;
+        if (this.race.done || this.race.waiting || this.race.lap >= this.race.maxLaps) return;
 
         this.simulateAI();
         this.renderLapTrack();
         this.renderRaceGrid();
         this.updateStatusBars();
 
-        if (this.lap > 0 && this.lap % 5 === 0 && !this.done) {
+        if (this.race.lap > 0 && this.race.lap % 5 === 0 && !this.race.done) {
             this.sendEngineerMessage();
         }
 
         if (this.weatherForecast > 0 && !this.weatherChange) {
             this.weatherForecast--;
             if (this.weatherForecast === 0) {
-                const newWeather = F1.weathers.find(w => w.rain > this.weather.rain + 0.1) || this.weather;
-                if (newWeather !== this.weather) {
-                    this.weather = newWeather;
-                    this.addChat('ПОГОДА', `Начался ${this.weather.label.toLowerCase()}!`, 'weather');
+                const newWeather = F1.weathers.find(w => w.rain > this.race.weather.rain + 0.1) || this.race.weather;
+                if (newWeather !== this.race.weather) {
+                    this.race.weather = newWeather;
+                    this.addChat('ПОГОДА', `Начался ${this.race.weather.label.toLowerCase()}!`, 'weather');
                     this.weatherChange = true;
                 }
             }
         }
 
-        if (this.lap >= this.maxLaps) {
-            clearInterval(this.raceTimer);
+        if (this.race.lap >= this.race.maxLaps) {
+            clearInterval(this.race.timer);
             this.finishRace();
         }
     }
 
     simulateAI() {
-        this.lap++;
+        this.race.lap++;
 
-        for (let i = 0; i < this.positions.length - 1; i++) {
+        for (let i = 0; i < this.race.positions.length - 1; i++) {
             if (Math.random() < 0.15) {
                 const swapIdx = i + 1;
-                [this.positions[i], this.positions[swapIdx]] = [this.positions[swapIdx], this.positions[i]];
+                [this.race.positions[i], this.race.positions[swapIdx]] = [this.race.positions[swapIdx], this.race.positions[i]];
             }
         }
 
-        const playerIdx = this.positions.indexOf(this.playerPilot);
+        const playerIdx = this.race.positions.indexOf(this.playerPilot);
         if (playerIdx > 0 && Math.random() < 0.05) {
-            const front = this.positions[playerIdx - 1];
-            this.positions[playerIdx] = front;
-            this.positions[playerIdx - 1] = this.playerPilot;
+            const front = this.race.positions[playerIdx - 1];
+            this.race.positions[playerIdx] = front;
+            this.race.positions[playerIdx - 1] = this.playerPilot;
             this.addChat('ПРОПУСТИЛ', `${this.playerPilot.name} пропустил ${front.name}!`, 'system');
         }
 
-        this.playerPos = this.positions.indexOf(this.playerPilot) + 1;
-        this.els.gameLap.textContent = `${this.lap} / ${this.maxLaps}`;
+        this.race.playerPos = this.race.positions.indexOf(this.playerPilot) + 1;
+        if (this.els.gameLap) this.els.gameLap.textContent = `${this.race.lap} / ${this.race.maxLaps}`;
 
-        this.tyre = Math.max(0, this.tyre - 1 - Math.random() * 2);
-        this.fuel = Math.max(0, this.fuel - 0.5 - Math.random() * 1);
-        this.energy = Math.max(0, this.energy - 0.3 - Math.random() * 0.7);
-        this.ers = Math.min(100, this.ers + 0.5 + Math.random() * 0.5);
+        this.race.tyre = Math.max(0, this.race.tyre - 1 - Math.random() * 2);
+        this.race.fuel = Math.max(0, this.race.fuel - 0.5 - Math.random() * 1);
+        this.race.energy = Math.max(0, this.race.energy - 0.3 - Math.random() * 0.7);
+        this.race.ers = Math.min(100, this.race.ers + 0.5 + Math.random() * 0.5);
     }
 
-    // ============================================================
-    // ДЕЙСТВИЯ ИГРОКА В ГОНКЕ
-    // ============================================================
+    // ─── ДЕЙСТВИЯ ИГРОКА ──────────────────────────────────────────
     handleAction(action) {
-        if (this.done || this.waiting || !this.raceRunning) return;
-        this.waiting = true;
+        if (this.race.done || this.race.waiting || !this.race.running) return;
+        this.race.waiting = true;
         document.querySelectorAll('.btn-race').forEach(b => b.disabled = true);
 
-        const trackFactor = this.track?.speed || 1.0;
-        const weatherFactor = this.weather?.rain > 0.5 ? 1.5 : 1.0;
+        const r = this.race;
+        const trackFactor = r.track?.speed || 1.0;
+        const weatherFactor = r.weather?.rain > 0.5 ? 1.5 : 1.0;
         const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
         const tireWear = tireMap[this.selectedTire] || 0.7;
         const attackBoost = 1 + (this.pilotBoosts.attack || 0) / 100;
         const defenseBoost = 1 + (this.pilotBoosts.defense || 0) / 100;
 
         if (action === 'attack') {
-            this.ers = Math.max(0, this.ers - (7 + Math.random() * 5) * trackFactor * weatherFactor / attackBoost);
-            this.tyre = Math.max(0, this.tyre - (4 + Math.random() * 4) * (1 + tireWear * 0.5));
-            this.fuel = Math.max(0, this.fuel - (3 + Math.random() * 3) * (this.track?.fuelCons || 1));
-            this.energy = Math.max(0, this.energy - 5 - Math.random() * 5);
+            r.ers = Math.max(0, r.ers - (7 + Math.random() * 5) * trackFactor * weatherFactor / attackBoost);
+            r.tyre = Math.max(0, r.tyre - (4 + Math.random() * 4) * (1 + tireWear * 0.5));
+            r.fuel = Math.max(0, r.fuel - (3 + Math.random() * 3) * (r.track?.fuelCons || 1));
+            r.energy = Math.max(0, r.energy - 5 - Math.random() * 5);
 
-            const playerIdx = this.positions.indexOf(this.playerPilot);
+            const playerIdx = r.positions.indexOf(this.playerPilot);
             if (playerIdx > 0) {
-                let baseChance = 0.3 + (this.ers > 70 ? 0.2 : 0) + (this.tyre > 50 ? 0.1 : 0);
+                let baseChance = 0.3 + (r.ers > 70 ? 0.2 : 0) + (r.tyre > 50 ? 0.1 : 0);
                 baseChance *= attackBoost;
-                if (Math.random() < baseChance * trackFactor * (this.weather?.grip || 1)) {
-                    const front = this.positions[playerIdx - 1];
-                    this.positions[playerIdx] = front;
-                    this.positions[playerIdx - 1] = this.playerPilot;
-                    this.overtakes.push(front);
+                if (Math.random() < baseChance * trackFactor * (r.weather?.grip || 1)) {
+                    const front = r.positions[playerIdx - 1];
+                    r.positions[playerIdx] = front;
+                    r.positions[playerIdx - 1] = this.playerPilot;
+                    r.overtakes.push(front);
                     this.addChat('ОБГОН', `${this.playerPilot.name} обошёл ${front.name}!`, 'pilot');
                 } else if (Math.random() < 0.04) {
-                    this.penalties += 5;
-                    this.penaltyHistory.push(this.lap);
+                    r.penalties += 5;
+                    r.penaltyHistory.push(r.lap);
                     this.addChat('ШТРАФ', `${this.playerPilot.name} +5 секунд за вытеснение!`, 'penalty');
                 }
             }
         } else if (action === 'conserve') {
-            this.ers = Math.min(100, this.ers + (3 + Math.random() * 3) * trackFactor);
-            this.tyre = Math.min(100, this.tyre + (2 + Math.random() * 2));
-            this.fuel = Math.max(0, this.fuel - (1 + Math.random() * 1.5) / defenseBoost);
-            this.energy = Math.min(100, this.energy + 3 + Math.random() * 4);
+            r.ers = Math.min(100, r.ers + (3 + Math.random() * 3) * trackFactor);
+            r.tyre = Math.min(100, r.tyre + (2 + Math.random() * 2));
+            r.fuel = Math.max(0, r.fuel - (1 + Math.random() * 1.5) / defenseBoost);
+            r.energy = Math.min(100, r.energy + 3 + Math.random() * 4);
             this.addChat('ЭКОНОМ', 'Экономия ресурсов.', 'system');
         } else if (action === 'box') {
-            this.pitStops++;
-            this.tyre = Math.min(100, this.tyre + 25 + Math.random() * 20);
-            this.ers = Math.min(100, this.ers + 3 + Math.random() * 6);
-            this.fuel = Math.max(0, this.fuel - (4 + Math.random() * 3));
-            this.energy = Math.min(100, this.energy + 10);
-            this.addChat('ПИТ-СТОП', `Пит-стоп #${this.pitStops} выполнен.`, 'team');
+            r.pitStops++;
+            r.tyre = Math.min(100, r.tyre + 25 + Math.random() * 20);
+            r.ers = Math.min(100, r.ers + 3 + Math.random() * 6);
+            r.fuel = Math.max(0, r.fuel - (4 + Math.random() * 3));
+            r.energy = Math.min(100, r.energy + 10);
+            this.addChat('ПИТ-СТОП', `Пит-стоп #${r.pitStops} выполнен.`, 'team');
         } else if (action === 'penalty') {
-            if (this.penalties > 0) {
+            if (r.penalties > 0) {
                 const remove = Math.floor(Math.random() * 3) + 1;
-                this.penalties = Math.max(0, this.penalties - remove);
-                this.addChat('СТЮАРДЫ', `Снято ${remove} секунд штрафа. Осталось: ${this.penalties}с`, 'penalty');
+                r.penalties = Math.max(0, r.penalties - remove);
+                this.addChat('СТЮАРДЫ', `Снято ${remove} секунд штрафа. Осталось: ${r.penalties}с`, 'penalty');
             } else if (Math.random() < 0.15) {
-                const idx = this.positions.indexOf(this.playerPilot);
+                const idx = r.positions.indexOf(this.playerPilot);
                 if (idx > 0) {
-                    const front = this.positions[idx - 1];
-                    this.positions[idx] = front;
-                    this.positions[idx - 1] = this.playerPilot;
+                    const front = r.positions[idx - 1];
+                    r.positions[idx] = front;
+                    r.positions[idx - 1] = this.playerPilot;
                     this.addChat('СТЮАРДЫ', `Протест принят! ${front.name} наказан!`, 'penalty');
                 }
             } else {
@@ -1179,75 +1167,49 @@ class PitWallPulse {
             }
         }
 
-        if (action === 'attack' && this.ers > 60 && Math.random() < 0.2) {
-            const lapTime = 60 + Math.random() * 5 - (this.ers / 100) * 2;
-            if (lapTime < this.fastestLapTime) {
-                this.fastestLapTime = lapTime;
-                this.fastestLap = true;
+        if (action === 'attack' && r.ers > 60 && Math.random() < 0.2) {
+            const lapTime = 60 + Math.random() * 5 - (r.ers / 100) * 2;
+            if (lapTime < r.fastestLapTime) {
+                r.fastestLapTime = lapTime;
+                r.fastestLap = true;
                 this.addChat('БЫСТРЫЙ КРУГ', `${this.playerPilot.name} показал лучшее время!`, 'pilot');
             }
         }
 
-        if (this.tyre < 10 && Math.random() < 0.1) {
+        if (r.tyre < 10 && Math.random() < 0.1) {
             this.addChat('ПРОКОЛ', `${this.playerPilot.name} проколол шину! Срочно в боксы!`, 'penalty');
-            this.tyre = 5;
-            this.energy = Math.max(0, this.energy - 20);
+            r.tyre = 5;
+            r.energy = Math.max(0, r.energy - 20);
         }
 
         this.updateStatusBars();
         this.renderRaceGrid();
 
-        this.waiting = false;
+        this.race.waiting = false;
         document.querySelectorAll('.btn-race').forEach(b => b.disabled = false);
     }
 
-    sendEngineerMessage() {
-        const msgs = [
-            'Окей, давим, соперник на 0.8с',
-            'Береги резину, нам нужно 5 кругов',
-            'Ты быстрее всех в середине пелотона!',
-            'Соперник сзади на 0.5с, защищайся',
-            'Отличный темп, так держать!',
-            'Сейчас окно для атаки, действуй!',
-            'Экономь топливо, до финиша 10 кругов',
-            'Впереди трафик, будь осторожен',
-            'Шины начинают сдавать, береги',
-            'Отличный круг! Продолжай в том же духе!'
-        ];
-        this.addChat('ИНЖЕНЕР', msgs[Math.floor(Math.random() * msgs.length)], 'engineer');
-    }
-
-    addChat(label, text, type = 'system') {
-        const container = this.els.chatMessages;
-        const msg = document.createElement('div');
-        msg.className = `chat-msg ${type}`;
-        msg.innerHTML = `<span class="label">${label}</span> ${text}`;
-        container.appendChild(msg);
-        container.scrollTop = container.scrollHeight;
-        if (container.children.length > 30) container.removeChild(container.firstChild);
-    }
-
-    // ============================================================
-    // RENDER
-    // ============================================================
+    // ─── RENDER ────────────────────────────────────────────────────
     renderLapTrack() {
         const container = this.els.lapTrack;
+        if (!container) return;
         container.innerHTML = '';
-        const total = Math.min(this.maxLaps, 60);
+        const total = Math.min(this.race.maxLaps, 60);
         for (let i = 0; i < total; i++) {
             const dot = document.createElement('span');
             dot.className = 'lap-dot';
-            if (i < this.lap) dot.classList.add('done');
-            if (i === this.lap && !this.done) dot.classList.add('active');
-            if (this.penaltyHistory.includes(i)) dot.classList.add('penalty');
-            if (this.fastestLap && i === this.lap - 1) dot.classList.add('fastest');
+            if (i < this.race.lap) dot.classList.add('done');
+            if (i === this.race.lap && !this.race.done) dot.classList.add('active');
+            if (this.race.penaltyHistory.includes(i)) dot.classList.add('penalty');
+            if (this.race.fastestLap && i === this.race.lap - 1) dot.classList.add('fastest');
             container.appendChild(dot);
         }
     }
 
     renderRaceGrid() {
         const container = this.els.raceGrid;
-        const top = this.positions.slice(0, 20);
+        if (!container) return;
+        const top = this.race.positions.slice(0, 20);
         let html = `<div class="race-grid-header"><span>POS</span><span>DRIVER</span><span>GAP</span><span>PTS</span></div>`;
         top.forEach((d, i) => {
             const pos = i + 1;
@@ -1266,113 +1228,199 @@ class PitWallPulse {
     }
 
     updateStatusBars() {
-        this.els.ersBar.style.width = Math.min(100, Math.max(0, this.ers)) + '%';
-        this.els.tyreBar.style.width = Math.min(100, Math.max(0, this.tyre)) + '%';
-        this.els.fuelBar.style.width = Math.min(100, Math.max(0, this.fuel)) + '%';
-        this.els.energyBar.style.width = Math.min(100, Math.max(0, this.energy)) + '%';
-        this.els.ersValue.textContent = Math.round(Math.min(100, Math.max(0, this.ers))) + '%';
-        this.els.tyreValue.textContent = Math.round(Math.min(100, Math.max(0, this.tyre))) + '%';
-        this.els.fuelValue.textContent = Math.round(Math.min(100, Math.max(0, this.fuel))) + '%';
-        this.els.energyValue.textContent = Math.round(Math.min(100, Math.max(0, this.energy))) + '%';
+        const r = this.race;
+        if (this.els.ersBar) this.els.ersBar.style.width = Math.min(100, Math.max(0, r.ers)) + '%';
+        if (this.els.tyreBar) this.els.tyreBar.style.width = Math.min(100, Math.max(0, r.tyre)) + '%';
+        if (this.els.fuelBar) this.els.fuelBar.style.width = Math.min(100, Math.max(0, r.fuel)) + '%';
+        if (this.els.energyBar) this.els.energyBar.style.width = Math.min(100, Math.max(0, r.energy)) + '%';
+        if (this.els.ersValue) this.els.ersValue.textContent = Math.round(Math.min(100, Math.max(0, r.ers))) + '%';
+        if (this.els.tyreValue) this.els.tyreValue.textContent = Math.round(Math.min(100, Math.max(0, r.tyre))) + '%';
+        if (this.els.fuelValue) this.els.fuelValue.textContent = Math.round(Math.min(100, Math.max(0, r.fuel))) + '%';
+        if (this.els.energyValue) this.els.energyValue.textContent = Math.round(Math.min(100, Math.max(0, r.energy))) + '%';
     }
 
-    // ============================================================
-    // ФИНИШ
-    // ============================================================
-    finishRace() {
-        this.done = true;
-        this.raceRunning = false;
-        document.querySelectorAll('.btn-race').forEach(b => b.disabled = true);
-        if (this.raceTimer) clearInterval(this.raceTimer);
+    // ─── ЧАТ ──────────────────────────────────────────────────────
+    addChat(label, text, type = 'system') {
+        const container = this.els.chatMessages;
+        if (!container) return;
+        const msg = document.createElement('div');
+        msg.className = `chat-msg ${type}`;
+        msg.innerHTML = `<span class="label">${label}</span> ${text}`;
+        container.appendChild(msg);
+        container.scrollTop = container.scrollHeight;
+        if (container.children.length > 30) container.removeChild(container.firstChild);
+    }
 
-        const finalPos = this.positions.indexOf(this.playerPilot) + 1;
+    sendEngineerMessage() {
+        const msgs = [
+            'Окей, давим, соперник на 0.8с',
+            'Береги резину, нам нужно 5 кругов',
+            'Ты быстрее всех в середине пелотона!',
+            'Соперник сзади на 0.5с, защищайся',
+            'Отличный темп, так держать!',
+            'Сейчас окно для атаки, действуй!',
+            'Экономь топливо, до финиша 10 кругов',
+            'Впереди трафик, будь осторожен',
+            'Шины начинают сдавать, береги',
+            'Отличный круг! Продолжай в том же духе!'
+        ];
+        this.addChat('ИНЖЕНЕР', msgs[Math.floor(Math.random() * msgs.length)], 'engineer');
+    }
+
+    // ─── СТАТИСТИКА ──────────────────────────────────────────────
+    updateStats() {
+        const s = this.stats;
+        if (this.els.statRaces) this.els.statRaces.textContent = s.races;
+        if (this.els.statWins) this.els.statWins.textContent = s.wins;
+        if (this.els.statPodiums) this.els.statPodiums.textContent = s.podiums;
+        if (this.els.statPoints) this.els.statPoints.textContent = s.points;
+        if (this.els.statFastest) this.els.statFastest.textContent = s.fastestLaps;
+    }
+
+    // ─── ЗАЧЁТ ────────────────────────────────────────────────────
+    renderStandings() {
+        // Пилоты
+        const sorted = Object.entries(this.championship).sort((a, b) => b[1] - a[1]).slice(0, 20);
+        let html = `<div class="standings-table"><div class="st-header"><span>POS</span><span>DRIVER</span><span>TEAM</span><span>PTS</span></div>`;
+        sorted.forEach(([name, pts], i) => {
+            const driver = F1.drivers.find(d => d.name === name);
+            const isPlayer = name === this.playerPilot?.name;
+            html += `<div class="st-row ${i === 0 ? 'leader' : ''} ${isPlayer ? 'player' : ''}">
+                <span class="st-pos ${i < 3 ? 'top3' : ''} ${i === 0 ? 'p1' : ''}">${i + 1}</span>
+                <span class="st-name">${isPlayer ? '★ ' : ''}${name}</span>
+                <span class="st-team">${driver ? driver.team : '—'}</span>
+                <span class="st-pts">${pts}</span>
+            </div>`;
+        });
+        html += '</div>';
+        if (this.els.driversStandings) this.els.driversStandings.innerHTML = html;
+
+        // Команды
+        const cSorted = Object.entries(this.constructorsChamp).sort((a, b) => b[1] - a[1]).slice(0, 11);
+        let cHtml = `<div class="standings-table"><div class="st-header"><span>POS</span><span>TEAM</span><span>PTS</span></div>`;
+        cSorted.forEach(([name, pts], i) => {
+            const isPlayer = name === this.playerTeam?.name;
+            cHtml += `<div class="st-row ${i === 0 ? 'leader' : ''} ${isPlayer ? 'player' : ''}">
+                <span class="st-pos ${i < 3 ? 'top3' : ''} ${i === 0 ? 'p1' : ''}">${i + 1}</span>
+                <span class="st-name">${isPlayer ? '★ ' : ''}${name}</span>
+                <span class="st-pts">${pts}</span>
+            </div>`;
+        });
+        cHtml += '</div>';
+        if (this.els.constructorsStandings) this.els.constructorsStandings.innerHTML = cHtml;
+    }
+
+    // ─── ФИНИШ ────────────────────────────────────────────────────
+    finishRace() {
+        this.race.done = true;
+        this.race.running = false;
+        document.querySelectorAll('.btn-race').forEach(b => b.disabled = true);
+        if (this.race.timer) clearInterval(this.race.timer);
+
+        const finalPos = this.race.positions.indexOf(this.playerPilot) + 1;
         const pointsMap = {1:25,2:18,3:15,4:12,5:10,6:8,7:6,8:4,9:2,10:1};
         const earned = pointsMap[finalPos] || 0;
-        const bonus = this.fastestLap ? 1 : 0;
-        this.points = earned + bonus;
+        const bonus = this.race.fastestLap ? 1 : 0;
+        this.race.points = earned + bonus;
 
-        this.positions.forEach((d, i) => {
+        this.race.positions.forEach((d, i) => {
             const pos = i + 1;
             const pts = pointsMap[pos] || 0;
             this.championship[d.name] = (this.championship[d.name] || 0) + pts;
         });
 
-        this.positions.forEach((d, i) => {
+        this.race.positions.forEach((d, i) => {
             const pos = i + 1;
             const pts = pointsMap[pos] || 0;
             const team = F1.teams.find(t => t.name === d.team);
             if (team) this.constructorsChamp[team.name] = (this.constructorsChamp[team.name] || 0) + pts;
         });
 
-        const progress = this.positions.map((d, i) => {
-            const startIdx = this.positions.indexOf(d);
+        const progress = this.race.positions.map((d, i) => {
+            const startIdx = this.race.positions.indexOf(d);
             return { name: d.name, progress: startIdx - i };
         });
         progress.sort((a, b) => b.progress - a.progress);
-        this.dotd = progress[0]?.name || this.playerPilot.name;
+        this.race.dotd = progress[0]?.name || this.playerPilot.name;
 
         this.stats.races++;
         if (finalPos <= 3) this.stats.podiums++;
         if (finalPos === 1) this.stats.wins++;
-        this.stats.points += this.points;
-        if (this.fastestLap) this.stats.fastestLaps++;
+        this.stats.points += this.race.points;
+        if (this.race.fastestLap) this.stats.fastestLaps++;
         this.updateStats();
 
-        this.els.raceView.style.display = 'none';
-        this.els.protocolView.style.display = 'block';
+        if (this.els.raceView) this.els.raceView.style.display = 'none';
+        if (this.els.protocolView) this.els.protocolView.style.display = 'block';
 
-        this.els.pFinish.textContent = `P${finalPos}`;
-        this.els.pPoints.textContent = this.points;
-        this.els.pPenalties.textContent = this.penalties + 'с';
-        this.els.pOvertakes.textContent = this.overtakes.length;
-        this.els.pFastest.textContent = this.fastestLap ? '✅ +1 очко' : '—';
-        this.els.pDotd.textContent = this.dotd;
+        if (this.els.pFinish) this.els.pFinish.textContent = `P${finalPos}`;
+        if (this.els.pPoints) this.els.pPoints.textContent = this.race.points;
+        if (this.els.pPenalties) this.els.pPenalties.textContent = this.race.penalties + 'с';
+        if (this.els.pOvertakes) this.els.pOvertakes.textContent = this.race.overtakes.length;
+        if (this.els.pFastest) this.els.pFastest.textContent = this.race.fastestLap ? '✅ +1 очко' : '—';
+        if (this.els.pDotd) this.els.pDotd.textContent = this.race.dotd;
 
         let verdict = '';
         if (finalPos <= 3) verdict = '🏆 Подиум! Отличная стратегия!';
         else if (finalPos <= 8) verdict = '👍 Очки есть. Хорошая работа!';
         else verdict = '😬 Тяжёлая гонка. Анализируй ошибки.';
-        if (this.penalties > 10) verdict += ' ⚠️ Много штрафов!';
-        this.els.pResult.textContent = verdict;
+        if (this.race.penalties > 10) verdict += ' ⚠️ Много штрафов!';
+        if (this.els.pResult) this.els.pResult.textContent = verdict;
 
-        this.addChat('ФИНИШ', `${this.playerPilot.name} финиширует P${finalPos}! +${this.points} очков`, 'system');
-
+        this.addChat('ФИНИШ', `${this.playerPilot.name} финиширует P${finalPos}! +${this.race.points} очков`, 'system');
         this.renderStandings();
 
         setTimeout(() => {
             this.showPressConference();
         }, 1200);
 
-        this.addGarageMessage('📊 ИТОГО', `${this.playerPilot.name} — P${finalPos}, +${this.points} очков`);
+        this.addGarageMessage('📊 ИТОГО', `${this.playerPilot.name} — P${finalPos}, +${this.race.points} очков`);
     }
 
-    // ============================================================
-    // ПРЕСС-КОНФЕРЕНЦИЯ
-    // ============================================================
+    // ─── ПРЕСС-КОНФЕРЕНЦИЯ (ИСПРАВЛЕНА) ──────────────────────────
     showPressConference() {
         const boostCount = Object.values(this.pilotBoosts).filter(v => v > 0).length;
         const questions = this.generatePressQuestions(Math.min(boostCount + 1, 3));
         
+        // Если вопросов нет — пропускаем
+        if (!questions || questions.length === 0) {
+            if (this.els.btnNext) {
+                this.els.btnNext.style.display = 'block';
+                if (this.currentRound >= this.totalRounds - 1) {
+                    this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
+                } else {
+                    this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
+                }
+            }
+            return;
+        }
+        
         const modal = document.createElement('div');
         modal.className = 'press-modal';
+        
+        let answersHtml = '';
+        questions.forEach((q, qi) => {
+            answersHtml += `
+                <div class="press-question" data-q="${qi}" style="display:${qi === 0 ? 'block' : 'none'}">
+                    <div class="press-q">"${q.question}"</div>
+                    <div class="press-answers">
+                        ${q.answers.map((a, ai) => `
+                            <button class="press-answer" data-q="${qi}" data-answer="${ai}" data-bonus="${a.bonus}">
+                                ${a.text}
+                                <span class="press-effect">${a.effect}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
         modal.innerHTML = `
             <div class="press-box">
                 <h3>🎙️ ПРЕСС-КОНФЕРЕНЦИЯ</h3>
                 <div class="press-sub">Ответь на вопросы журналистов и получи бонусы!</div>
                 <div id="pressQuestions">
-                    ${questions.map((q, qi) => `
-                        <div class="press-question" data-q="${qi}" style="display:${qi === 0 ? 'block' : 'none'}">
-                            <div class="press-q">"${q.question}"</div>
-                            <div class="press-answers">
-                                ${q.answers.map((a, ai) => `
-                                    <button class="press-answer" data-q="${qi}" data-answer="${ai}" data-bonus="${a.bonus}">
-                                        ${a.text}
-                                        <span class="press-effect">${a.effect}</span>
-                                    </button>
-                                `).join('')}
-                            </div>
-                        </div>
-                    `).join('')}
+                    ${answersHtml}
                 </div>
                 <div class="press-result" id="pressResult" style="display:none;"></div>
                 <button class="press-close" id="pressClose" style="display:none;">▶ Продолжить</button>
@@ -1381,7 +1429,7 @@ class PitWallPulse {
         
         document.body.appendChild(modal);
         
-        let answered = 0;
+        let currentQuestion = 0;
         const totalQuestions = questions.length;
         
         const showQuestion = (index) => {
@@ -1402,7 +1450,9 @@ class PitWallPulse {
                 container.querySelectorAll('.press-answer').forEach(b => {
                     b.disabled = true;
                     b.style.opacity = '0.4';
+                    b.style.cursor = 'default';
                 });
+                
                 this.style.opacity = '1';
                 this.style.borderColor = '#FFD700';
                 this.style.background = 'rgba(255,215,0,0.08)';
@@ -1412,16 +1462,16 @@ class PitWallPulse {
                 result.innerHTML = `✅ Бонус активирован: <strong>${this.querySelector('.press-effect').textContent}</strong>`;
                 result.style.color = '#00E676';
                 
-                answered++;
-                
                 setTimeout(() => {
-                    if (answered < totalQuestions) {
+                    currentQuestion++;
+                    
+                    if (currentQuestion < totalQuestions) {
                         result.style.display = 'none';
-                        showQuestion(answered);
+                        showQuestion(currentQuestion);
                     } else {
                         const closeBtn = modal.querySelector('#pressClose');
                         closeBtn.style.display = 'block';
-                        result.innerHTML = `🎉 Отлично! Получено бустов!`;
+                        result.innerHTML = `🎉 Отлично! Все вопросы отвечены! Бусты получены.`;
                         result.style.color = '#FFD700';
                         this.addChat('ПРЕСС-КОНФЕРЕНЦИЯ', `${this.playerPilot.name} дал интервью! Получены бонусы.`, 'press');
                         this.renderStandings();
@@ -1433,11 +1483,13 @@ class PitWallPulse {
         
         modal.querySelector('#pressClose').addEventListener('click', () => {
             modal.remove();
-            this.els.btnNext.style.display = 'block';
-            if (this.currentRound >= this.totalRounds - 1) {
-                this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
-            } else {
-                this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
+            if (this.els.btnNext) {
+                this.els.btnNext.style.display = 'block';
+                if (this.currentRound >= this.totalRounds - 1) {
+                    this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
+                } else {
+                    this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
+                }
             }
         });
     }
@@ -1492,35 +1544,1612 @@ class PitWallPulse {
         }
     }
 
-    // ============================================================
-    // СЛЕДУЮЩИЙ ЭТАП
-    // ============================================================
+    // ─── СЛЕДУЮЩИЙ ЭТАП ──────────────────────────────────────────
     nextRound() {
         this.currentRound++;
         if (this.currentRound >= this.totalRounds) {
             const winner = Object.entries(this.championship).sort((a, b) => b[1] - a[1])[0];
             const cWinner = Object.entries(this.constructorsChamp).sort((a, b) => b[1] - a[1])[0];
             this.addChat('ЧЕМПИОНАТ ЗАВЕРШЁН', `${winner[0]} — Чемпион мира! 🏆 ${cWinner[0]} — Кубок конструкторов!`, 'system');
-            this.els.btnNext.style.display = 'none';
+            if (this.els.btnNext) this.els.btnNext.style.display = 'none';
             this.renderStandings();
             this.addGarageMessage('🏆 ЧЕМПИОНАТ', `🏆 ${winner[0]} — Чемпион мира! 🏆 Кубок конструкторов — ${cWinner[0]}!`);
             return;
         }
 
-        this.els.protocolView.style.display = 'none';
-        this.els.btnNext.style.display = 'none';
-        this.els.chatMessages.innerHTML = '';
+        if (this.els.protocolView) this.els.protocolView.style.display = 'none';
+        if (this.els.btnNext) this.els.btnNext.style.display = 'none';
+        if (this.els.chatMessages) this.els.chatMessages.innerHTML = '';
         this.addChat('СИСТЕМА', `🏁 Этап ${this.currentRound + 1}: ${F1.tracks.find(t => t.id === F1.calendar[this.currentRound]?.trackId)?.name || '—'}`, 'system');
         this.startRound();
     }
 
-    // ============================================================
-    // СБРОС
-    // ============================================================
+    // ─── СБРОС ────────────────────────────────────────────────────
     resetGame() {
-        if (this.qualyTimer) clearInterval(this.qualyTimer);
-        if (this.raceTimer) clearInterval(this.raceTimer);
-        if (this.testState.timer) clearInterval(this.testState.timer);
+        if (this.qualy.timer) clearInterval(this.qualy.timer);
+        if (this.race.timer) clearInterval(this.race.timer);
+        if (this.test.timer) clearInterval(this.test.timer);
+        this.startSeason();
+    }
+}
+
+// ============================================================
+// ЗАПУСК
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    const game = new PitWallPulse();
+    window.game = game;
+});/**
+ * Pit Wall Pulse 7.0 — ULTIMATE
+ * 
+ * АРХИТЕКТУРА:
+ * ┌─────────────────────────────────────────────────────────┐
+ * │  1. ДАННЫЕ (F1)                                       │
+ * │     └── teams, drivers, tracks, calendar, weathers    │
+ * ├─────────────────────────────────────────────────────────┤
+ * │  2. КЛАСС PitWallPulse                               │
+ * │     ├── Конструктор                                  │
+ * │     ├── Инициализация (DOM, рендеры)                 │
+ * │     ├── Навигация                                    │
+ * │     ├── Гараж                                        │
+ * │     ├── Тестовый заезд                               │
+ * │     ├── Квалификация                                 │
+ * │     ├── Гонка                                        │
+ * │     ├── Пресс-конференция (ИСПРАВЛЕНА)              │
+ * │     ├── Чемпионат                                    │
+ * │     └── Сброс / Управление сезоном                   │
+ * └─────────────────────────────────────────────────────────┘
+ */
+
+// ============================================================
+// 1. ДАННЫЕ F1 2026
+// ============================================================
+const F1 = {
+    teams: [
+        { id: 'mclaren', name: 'McLaren', color: '#FF8000', engine: 'Mercedes' },
+        { id: 'mercedes', name: 'Mercedes', color: '#00D2BE', engine: 'Mercedes' },
+        { id: 'ferrari', name: 'Ferrari', color: '#DC0000', engine: 'Ferrari' },
+        { id: 'redbull', name: 'Red Bull', color: '#1E41FF', engine: 'Red Bull Ford' },
+        { id: 'astonmartin', name: 'Aston Martin', color: '#006F62', engine: 'Honda' },
+        { id: 'alpine', name: 'Alpine', color: '#0090FF', engine: 'Mercedes' },
+        { id: 'williams', name: 'Williams', color: '#1868D8', engine: 'Mercedes' },
+        { id: 'racingbulls', name: 'Racing Bulls', color: '#4B69FF', engine: 'Red Bull Ford' },
+        { id: 'haas', name: 'Haas', color: '#B6B6B6', engine: 'Ferrari' },
+        { id: 'audi', name: 'Audi', color: '#FF0000', engine: 'Audi' },
+        { id: 'cadillac', name: 'Cadillac', color: '#0066B3', engine: 'Ferrari' }
+    ],
+    drivers: [
+        { name: 'L. Norris', team: 'McLaren', number: 4 },
+        { name: 'O. Piastri', team: 'McLaren', number: 81 },
+        { name: 'G. Russell', team: 'Mercedes', number: 63 },
+        { name: 'K. Antonelli', team: 'Mercedes', number: 12 },
+        { name: 'C. Leclerc', team: 'Ferrari', number: 16 },
+        { name: 'L. Hamilton', team: 'Ferrari', number: 44 },
+        { name: 'M. Verstappen', team: 'Red Bull', number: 1 },
+        { name: 'I. Hadjar', team: 'Red Bull', number: 30 },
+        { name: 'F. Alonso', team: 'Aston Martin', number: 14 },
+        { name: 'L. Stroll', team: 'Aston Martin', number: 18 },
+        { name: 'P. Gasly', team: 'Alpine', number: 10 },
+        { name: 'F. Colapinto', team: 'Alpine', number: 43 },
+        { name: 'A. Albon', team: 'Williams', number: 23 },
+        { name: 'C. Sainz', team: 'Williams', number: 55 },
+        { name: 'L. Lawson', team: 'Racing Bulls', number: 38 },
+        { name: 'A. Lindblad', team: 'Racing Bulls', number: 11 },
+        { name: 'E. Ocon', team: 'Haas', number: 31 },
+        { name: 'O. Bearman', team: 'Haas', number: 87 },
+        { name: 'N. Hülkenberg', team: 'Audi', number: 27 },
+        { name: 'G. Bortoleto', team: 'Audi', number: 5 },
+        { name: 'V. Bottas', team: 'Cadillac', number: 77 },
+        { name: 'S. Perez', team: 'Cadillac', number: 11 }
+    ],
+    tracks: [
+        { id: 'australia', name: 'Альберт-Парк', country: 'Австралия', laps: 40, speed: 1.0, tyreWear: 0.9, fuelCons: 0.9 },
+        { id: 'china', name: 'Шанхай', country: 'Китай', laps: 38, speed: 1.1, tyreWear: 1.0, fuelCons: 1.0 },
+        { id: 'japan', name: 'Судзука', country: 'Япония', laps: 39, speed: 1.3, tyreWear: 0.8, fuelCons: 1.1 },
+        { id: 'miami', name: 'Майами', country: 'США', laps: 39, speed: 0.9, tyreWear: 0.9, fuelCons: 0.8 },
+        { id: 'canada', name: 'Монреаль', country: 'Канада', laps: 40, speed: 1.0, tyreWear: 1.1, fuelCons: 0.9 },
+        { id: 'monaco', name: 'Монако', country: 'Монако', laps: 42, speed: 0.5, tyreWear: 1.6, fuelCons: 0.6 },
+        { id: 'spain', name: 'Барселона', country: 'Испания', laps: 38, speed: 1.1, tyreWear: 1.0, fuelCons: 1.0 },
+        { id: 'austria', name: 'Ред Булл Ринг', country: 'Австрия', laps: 39, speed: 1.2, tyreWear: 0.9, fuelCons: 1.1 },
+        { id: 'uk', name: 'Сильверстоун', country: 'Великобритания', laps: 40, speed: 1.2, tyreWear: 0.9, fuelCons: 1.0 },
+        { id: 'belgium', name: 'Спа', country: 'Бельгия', laps: 44, speed: 1.4, tyreWear: 0.6, fuelCons: 1.3 },
+        { id: 'hungary', name: 'Хунгароринг', country: 'Венгрия', laps: 40, speed: 0.9, tyreWear: 1.1, fuelCons: 0.9 },
+        { id: 'netherlands', name: 'Зандворт', country: 'Нидерланды', laps: 40, speed: 1.0, tyreWear: 1.0, fuelCons: 0.9 },
+        { id: 'italy', name: 'Монца', country: 'Италия', laps: 40, speed: 1.3, tyreWear: 0.7, fuelCons: 1.2 },
+        { id: 'madrid', name: 'Мадрид', country: 'Испания', laps: 38, speed: 1.0, tyreWear: 0.9, fuelCons: 0.9 },
+        { id: 'azerbaijan', name: 'Баку', country: 'Азербайджан', laps: 40, speed: 1.2, tyreWear: 0.8, fuelCons: 1.1 },
+        { id: 'singapore', name: 'Сингапур', country: 'Сингапур', laps: 42, speed: 0.5, tyreWear: 1.5, fuelCons: 0.7 },
+        { id: 'usa', name: 'Остин', country: 'США', laps: 39, speed: 1.1, tyreWear: 0.9, fuelCons: 1.0 },
+        { id: 'mexico', name: 'Мехико', country: 'Мексика', laps: 38, speed: 0.9, tyreWear: 1.2, fuelCons: 0.8 },
+        { id: 'brazil', name: 'Сан-Паулу', country: 'Бразилия', laps: 39, speed: 1.2, tyreWear: 0.8, fuelCons: 1.1 },
+        { id: 'vegas', name: 'Лас-Вегас', country: 'США', laps: 40, speed: 1.1, tyreWear: 0.8, fuelCons: 1.0 },
+        { id: 'qatar', name: 'Лусаил', country: 'Катар', laps: 37, speed: 1.2, tyreWear: 0.9, fuelCons: 1.2 },
+        { id: 'abudhabi', name: 'Яс-Марина', country: 'ОАЭ', laps: 40, speed: 1.0, tyreWear: 0.9, fuelCons: 1.1 }
+    ],
+    calendar: [
+        { round: 1, trackId: 'australia', sprint: false },
+        { round: 2, trackId: 'china', sprint: true },
+        { round: 3, trackId: 'japan', sprint: false },
+        { round: 4, trackId: 'miami', sprint: true },
+        { round: 5, trackId: 'canada', sprint: true },
+        { round: 6, trackId: 'monaco', sprint: false },
+        { round: 7, trackId: 'spain', sprint: false },
+        { round: 8, trackId: 'austria', sprint: false },
+        { round: 9, trackId: 'uk', sprint: true },
+        { round: 10, trackId: 'belgium', sprint: false },
+        { round: 11, trackId: 'hungary', sprint: false },
+        { round: 12, trackId: 'netherlands', sprint: true },
+        { round: 13, trackId: 'italy', sprint: false },
+        { round: 14, trackId: 'madrid', sprint: false },
+        { round: 15, trackId: 'azerbaijan', sprint: false },
+        { round: 16, trackId: 'singapore', sprint: true },
+        { round: 17, trackId: 'usa', sprint: false },
+        { round: 18, trackId: 'mexico', sprint: false },
+        { round: 19, trackId: 'brazil', sprint: false },
+        { round: 20, trackId: 'vegas', sprint: false },
+        { round: 21, trackId: 'qatar', sprint: true },
+        { round: 22, trackId: 'abudhabi', sprint: false }
+    ],
+    weathers: [
+        { id: 'sunny', icon: '☀️', label: 'Сухо', temp: 28, grip: 1.0, rain: 0 },
+        { id: 'cloudy', icon: '⛅', label: 'Облачно', temp: 22, grip: 0.9, rain: 0 },
+        { id: 'rainy', icon: '🌧️', label: 'Дождь', temp: 16, grip: 0.6, rain: 0.6 },
+        { id: 'storm', icon: '⛈️', label: 'Ливень', temp: 12, grip: 0.4, rain: 1.0 }
+    ],
+    difficulties: [
+        { id: 'easy', label: 'Лёгкая', speed: 0.7, tyreWear: 0.5, bonus: 0.5 },
+        { id: 'medium', label: 'Средняя', speed: 1.0, tyreWear: 1.0, bonus: 1.0 },
+        { id: 'hard', label: 'Сложная', speed: 1.3, tyreWear: 1.5, bonus: 1.5 },
+        { id: 'expert', label: 'Эксперт', speed: 1.6, tyreWear: 2.0, bonus: 2.0 }
+    ]
+};
+
+// ============================================================
+// 2. КЛАСС ИГРЫ
+// ============================================================
+class PitWallPulse {
+    // ─── КОНСТРУКТОР ────────────────────────────────────────────
+    constructor() {
+        this.initState();
+        this.initDOM();
+        this.initGame();
+        
+        console.log('🏎️ Pit Wall Pulse 7.0 ULTIMATE загружен!');
+        console.log(`👤 Пилот: ${this.playerPilot.name} (${this.playerTeam.name})`);
+        console.log(`🏁 Всего Гран-при: ${this.totalRounds}`);
+        console.log(`💪 Активные бусты:`, this.pilotBoosts);
+    }
+
+    // ─── ИНИЦИАЛИЗАЦИЯ СОСТОЯНИЯ ──────────────────────────────
+    initState() {
+        // Сезон
+        this.currentRound = 0;
+        this.totalRounds = F1.calendar.length;
+        this.playerPilot = F1.drivers[Math.floor(Math.random() * F1.drivers.length)];
+        this.playerTeam = F1.teams.find(t => t.name === this.playerPilot.team);
+        this.selectedTire = 'medium';
+        this.championship = {};
+        this.constructorsChamp = {};
+        this.stats = { races: 0, wins: 0, podiums: 0, points: 0, fastestLaps: 0 };
+        this.raceHistory = [];
+        this.pilotBoosts = { attack: 0, defense: 0, rain: 0, start: 0, fuel: 0, qualy: 0 };
+        this.confidence = 50;
+
+        // Тестовый заезд
+        this.test = {
+            running: false,
+            lap: 0,
+            maxLaps: 15,
+            done: false,
+            ers: 85,
+            tyre: 70,
+            fuel: 90,
+            energy: 100,
+            bestLap: 999,
+            pitStops: 0,
+            track: null,
+            weather: null,
+            tire: 'medium',
+            difficulty: null,
+            timer: null,
+            waiting: false
+        };
+
+        // Гонка
+        this.race = {
+            lap: 0,
+            maxLaps: 40,
+            done: false,
+            positions: [],
+            playerPos: 1,
+            overtakes: [],
+            penalties: 0,
+            points: 0,
+            ers: 85,
+            tyre: 70,
+            fuel: 90,
+            energy: 100,
+            waiting: false,
+            track: null,
+            weather: null,
+            penaltyHistory: [],
+            fastestLap: false,
+            fastestLapTime: 999,
+            pitStops: 0,
+            dotd: null,
+            running: false,
+            timer: null
+        };
+
+        // Квалификация
+        this.qualy = {
+            clicks: 0,
+            time: 10,
+            active: false,
+            timer: null,
+            done: false
+        };
+
+        // Погода
+        this.weatherForecast = 0;
+        this.weatherChange = false;
+
+        // Фаза игры
+        this.phase = 'qualy'; // 'qualy' | 'race' | 'finished'
+        this.raceStarted = false;
+    }
+
+    // ─── ИНИЦИАЛИЗАЦИЯ DOM ──────────────────────────────────────
+    initDOM() {
+        this.els = {
+            // Навигация
+            navLinks: document.querySelectorAll('.nav-links a'),
+            sections: document.querySelectorAll('.section'),
+            navToggle: document.getElementById('navToggle'),
+            
+            // Игра
+            gameRound: document.getElementById('gameRound'),
+            gameTrack: document.getElementById('gameTrack'),
+            gameLap: document.getElementById('gameLap'),
+            gameReset: document.getElementById('gameReset'),
+            
+            // Квалификация
+            qualyView: document.getElementById('qualyView'),
+            qualyGrid: document.getElementById('qualyGrid'),
+            qualyTimer: document.getElementById('qualyTimer'),
+            qualyClicks: document.getElementById('qualyClicks'),
+            qualyPosition: document.getElementById('qualyPosition'),
+            btnGas: document.getElementById('btnGas'),
+            
+            // Гонка
+            raceView: document.getElementById('raceView'),
+            lapTrack: document.getElementById('lapTrack'),
+            raceGrid: document.getElementById('raceGrid'),
+            chatMessages: document.getElementById('chatMessages'),
+            ersBar: document.getElementById('ersBar'),
+            tyreBar: document.getElementById('tyreBar'),
+            fuelBar: document.getElementById('fuelBar'),
+            energyBar: document.getElementById('energyBar'),
+            ersValue: document.getElementById('ersValue'),
+            tyreValue: document.getElementById('tyreValue'),
+            fuelValue: document.getElementById('fuelValue'),
+            energyValue: document.getElementById('energyValue'),
+            btnStartRace: document.getElementById('btnStartRace'),
+            btnAttack: document.getElementById('btnAttack'),
+            btnConserve: document.getElementById('btnConserve'),
+            btnBox: document.getElementById('btnBox'),
+            btnStewards: document.getElementById('btnStewards'),
+            btnTires: document.getElementById('btnTires'),
+            tireSelect: document.getElementById('tireSelect'),
+            
+            // Протокол
+            protocolView: document.getElementById('protocolView'),
+            pFinish: document.getElementById('pFinish'),
+            pPoints: document.getElementById('pPoints'),
+            pPenalties: document.getElementById('pPenalties'),
+            pOvertakes: document.getElementById('pOvertakes'),
+            pFastest: document.getElementById('pFastest'),
+            pDotd: document.getElementById('pDotd'),
+            pResult: document.getElementById('pResult'),
+            btnNext: document.getElementById('btnNext'),
+            
+            // Гараж
+            pilotList: document.getElementById('pilotList'),
+            teamList: document.getElementById('teamList'),
+            garageChat: document.getElementById('garageChat'),
+            garageInput: document.getElementById('garageInput'),
+            garageSend: document.getElementById('garageSend'),
+            simDisplay: document.getElementById('simDisplay'),
+            simStart: document.getElementById('simStart'),
+            simStop: document.getElementById('simStop'),
+            
+            // Статистика
+            statRaces: document.getElementById('statRaces'),
+            statWins: document.getElementById('statWins'),
+            statPodiums: document.getElementById('statPodiums'),
+            statPoints: document.getElementById('statPoints'),
+            statFastest: document.getElementById('statFastest'),
+            
+            // Зачёт
+            driversStandings: document.getElementById('driversStandings'),
+            constructorsStandings: document.getElementById('constructorsStandings'),
+            
+            // Кнопки
+            startGameBtn: document.getElementById('startGameBtn'),
+            resetBtn: document.getElementById('resetBtn'),
+            
+            // Тестовый заезд (динамически создаётся)
+            testStart: null,
+            testStop: null,
+            testStatus: null,
+            testLapDisplay: null,
+            testBestDisplay: null,
+            testSpeedDisplay: null,
+            testConfidenceDisplay: null,
+            testErsBar: null,
+            testTyreBar: null,
+            testFuelBar: null,
+            testEnergyBar: null,
+            testErsValue: null,
+            testTyreValue: null,
+            testFuelValue: null,
+            testEnergyValue: null,
+            testAttack: null,
+            testConserve: null,
+            testBox: null,
+            testChat: null,
+            testTrackSelect: null,
+            testTireSelect: null,
+            testWeatherSelect: null,
+            testDifficultySelect: null
+        };
+
+        // Инициализация чемпионата
+        F1.drivers.forEach(d => this.championship[d.name] = 0);
+        F1.teams.forEach(t => this.constructorsChamp[t.name] = 0);
+    }
+
+    // ─── ИНИЦИАЛИЗАЦИЯ ИГРЫ ─────────────────────────────────────
+    initGame() {
+        this.setupNavigation();
+        this.renderGarage();
+        this.setupGarageChat();
+        this.setupSimulator();
+        this.setupTestDrive();
+        this.setupGame();
+        this.renderStandings();
+        this.updateStats();
+        this.startSeason();
+    }
+
+    // ============================================================
+    // 3. НАВИГАЦИЯ
+    // ============================================================
+    setupNavigation() {
+        const links = this.els.navLinks;
+        const sections = this.els.sections;
+        const toggle = this.els.navToggle;
+        const navLinks = document.getElementById('navLinks');
+
+        links.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = link.getAttribute('href').substring(1);
+                links.forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+                sections.forEach(s => s.classList.remove('active'));
+                document.getElementById(target).classList.add('active');
+                if (window.innerWidth <= 768) navLinks?.classList.remove('show');
+            });
+        });
+
+        toggle?.addEventListener('click', () => navLinks?.classList.toggle('show'));
+
+        this.els.startGameBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.querySelector('.nav-links a[href="#game"]')?.click();
+        });
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                const tabName = this.dataset.tab;
+                document.getElementById('driversStandings').style.display = tabName === 'drivers' ? 'block' : 'none';
+                document.getElementById('constructorsStandings').style.display = tabName === 'constructors' ? 'block' : 'none';
+            });
+        });
+    }
+
+    // ============================================================
+    // 4. ГАРАЖ
+    // ============================================================
+    renderGarage() {
+        // Пилоты
+        const pilotContainer = this.els.pilotList;
+        if (!pilotContainer) return;
+        pilotContainer.innerHTML = '';
+        F1.drivers.forEach(d => {
+            const btn = document.createElement('button');
+            btn.className = `pilot-opt ${d.name === this.playerPilot.name ? 'active' : ''}`;
+            btn.textContent = `#${d.number} ${d.name}`;
+            btn.dataset.pilot = d.name;
+            btn.addEventListener('click', () => {
+                pilotContainer.querySelectorAll('.pilot-opt').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.playerPilot = d;
+                this.playerTeam = F1.teams.find(t => t.name === d.team);
+                this.addGarageMessage('Инженер', `Выбран пилот ${d.name} (${this.playerTeam.name})`);
+                this.updateStats();
+            });
+            pilotContainer.appendChild(btn);
+        });
+
+        // Команды
+        const teamContainer = this.els.teamList;
+        if (!teamContainer) return;
+        teamContainer.innerHTML = '';
+        F1.teams.forEach(t => {
+            const btn = document.createElement('button');
+            btn.className = `team-opt ${t.name === this.playerTeam.name ? 'active' : ''}`;
+            btn.textContent = t.name;
+            btn.style.borderLeftColor = t.color;
+            btn.dataset.team = t.name;
+            btn.addEventListener('click', () => {
+                teamContainer.querySelectorAll('.team-opt').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const team = F1.teams.find(te => te.name === t.name);
+                if (team) {
+                    this.playerTeam = team;
+                    const driver = F1.drivers.find(d => d.team === team.name);
+                    if (driver) {
+                        this.playerPilot = driver;
+                        pilotContainer.querySelectorAll('.pilot-opt').forEach(b => {
+                            b.classList.toggle('active', b.dataset.pilot === driver.name);
+                        });
+                    }
+                    this.addGarageMessage('Инженер', `Выбрана команда ${team.name}`);
+                    this.updateStats();
+                }
+            });
+            teamContainer.appendChild(btn);
+        });
+
+        // Шины
+        document.querySelectorAll('.tire-opt').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tire-opt').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.selectedTire = btn.dataset.tire;
+                const info = document.getElementById('tireInfo');
+                const tireData = {
+                    soft: 'Софт: +15% скорость, быстрый износ',
+                    medium: 'Медиум: баланс скорости и износа',
+                    hard: 'Хард: -10% скорость, долгий износ'
+                };
+                if (info) info.textContent = tireData[this.selectedTire] || tireData.medium;
+                this.addGarageMessage('Инженер', `Выбрана стратегия: ${tireData[this.selectedTire]}`);
+            });
+        });
+    }
+
+    addGarageMessage(who, text) {
+        const chat = this.els.garageChat;
+        if (!chat) return;
+        const msg = document.createElement('div');
+        msg.className = 'msg';
+        msg.innerHTML = `<span class="name">${who}:</span> ${text}`;
+        chat.appendChild(msg);
+        chat.scrollTop = chat.scrollHeight;
+        if (chat.children.length > 20) chat.removeChild(chat.firstChild);
+    }
+
+    setupGarageChat() {
+        const sendBtn = this.els.garageSend;
+        const input = this.els.garageInput;
+        if (!sendBtn || !input) return;
+
+        sendBtn.addEventListener('click', () => {
+            const text = input.value.trim();
+            if (text) {
+                this.addGarageMessage('Вы', text);
+                input.value = '';
+                setTimeout(() => {
+                    const responses = ['Понял, учту!', 'Отличная идея!', 'Так и сделаем.', 'Хороший вопрос!', 'Данные приняты.'];
+                    this.addGarageMessage('Инженер', responses[Math.floor(Math.random() * responses.length)]);
+                }, 500 + Math.random() * 500);
+            }
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendBtn.click();
+        });
+    }
+
+    // ============================================================
+    // 5. СИМУЛЯТОР (КЛИКАЛКА)
+    // ============================================================
+    setupSimulator() {
+        let simInterval = null;
+        let simScore = 0;
+        const display = this.els.simDisplay;
+        const startBtn = this.els.simStart;
+        const stopBtn = this.els.simStop;
+        if (!display || !startBtn || !stopBtn) return;
+
+        startBtn.addEventListener('click', () => {
+            simScore = 0;
+            display.textContent = '🏁 ГАЗ! Жми быстрее! 0';
+            display.style.color = '#4FC3F7';
+            if (simInterval) clearInterval(simInterval);
+            simInterval = setInterval(() => {
+                simScore += Math.floor(Math.random() * 5) + 1;
+                display.textContent = `🏁 ГАЗ! Жми быстрее! ${simScore}`;
+            }, 150);
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            this.addGarageMessage('Инженер', '🏎️ Тренировка началась!');
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (simInterval) clearInterval(simInterval);
+            const total = simScore;
+            display.textContent = `🏁 Тренировка завершена! Результат: ${total} кликов`;
+            display.style.color = '#FFD700';
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            let grade = 'Нужно тренироваться!';
+            if (total > 80) grade = '🔥 Отлично! Ты готов к квалификации!';
+            else if (total > 50) grade = '💪 Хорошо! Почти как профессионал!';
+            else if (total > 30) grade = '👍 Неплохо, но можно лучше!';
+            this.addGarageMessage('Инженер', `📊 Результат: ${total} кликов — ${grade}`);
+        });
+        stopBtn.disabled = true;
+    }
+
+    // ============================================================
+    // 6. ТЕСТОВЫЙ ЗАЕЗД
+    // ============================================================
+    setupTestDrive() {
+        const garageGrid = document.querySelector('.garage-grid');
+        if (!garageGrid || document.getElementById('testDriveCard')) return;
+
+        const testCard = document.createElement('div');
+        testCard.className = 'garage-card test-drive-card';
+        testCard.id = 'testDriveCard';
+        testCard.innerHTML = `
+            <div class="card-title">🏎️ ТЕСТОВЫЙ ЗАЕЗД</div>
+            <div class="test-controls">
+                <select id="testTrackSelect" class="test-select">
+                    ${F1.tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+                </select>
+                <select id="testTireSelect" class="test-select">
+                    <option value="soft">🟥 Софт</option>
+                    <option value="medium" selected>🟨 Медиум</option>
+                    <option value="hard">⬜ Хард</option>
+                </select>
+                <select id="testWeatherSelect" class="test-select">
+                    <option value="sunny">☀️ Сухо</option>
+                    <option value="rainy">🌧️ Дождь</option>
+                    <option value="storm">⛈️ Ливень</option>
+                </select>
+                <select id="testDifficultySelect" class="test-select">
+                    <option value="easy">🟢 Лёгкая</option>
+                    <option value="medium" selected>🟡 Средняя</option>
+                    <option value="hard">🟠 Сложная</option>
+                    <option value="expert">🔴 Эксперт</option>
+                </select>
+                <div class="test-buttons">
+                    <button class="sim-btn start" id="testStart">▶ Старт</button>
+                    <button class="sim-btn stop" id="testStop">⏹ Стоп</button>
+                </div>
+            </div>
+            <div class="test-stats">
+                <div class="test-stat"><span>Круг</span><span id="testLapDisplay">0/15</span></div>
+                <div class="test-stat"><span>Лучший</span><span id="testBestDisplay">--:--</span></div>
+                <div class="test-stat"><span>Скорость</span><span id="testSpeedDisplay">0</span></div>
+                <div class="test-stat"><span>Уверенность</span><span id="testConfidenceDisplay">50%</span></div>
+            </div>
+            <div class="test-resources">
+                <div class="test-resource"><span>⚡ ERS</span><div class="test-bar"><div class="test-fill ers" id="testErsBar" style="width:85%"></div></div><span class="test-value" id="testErsValue">85%</span></div>
+                <div class="test-resource"><span>⏳ ШИНЫ</span><div class="test-bar"><div class="test-fill tyre" id="testTyreBar" style="width:70%"></div></div><span class="test-value" id="testTyreValue">70%</span></div>
+                <div class="test-resource"><span>⛽ ТОПЛИВО</span><div class="test-bar"><div class="test-fill fuel" id="testFuelBar" style="width:90%"></div></div><span class="test-value" id="testFuelValue">90%</span></div>
+                <div class="test-resource"><span>💪 ЭНЕРГИЯ</span><div class="test-bar"><div class="test-fill energy" id="testEnergyBar" style="width:100%"></div></div><span class="test-value" id="testEnergyValue">100%</span></div>
+            </div>
+            <div id="testStatus" class="test-status">Выбери настройки и нажми «Старт» для тренировки</div>
+            <div class="test-actions">
+                <button class="btn-race attack" id="testAttack"><span>⚡</span> Атака</button>
+                <button class="btn-race conserve" id="testConserve"><span>🛡️</span> Эконом</button>
+                <button class="btn-race box" id="testBox"><span>🔧</span> Пит</button>
+            </div>
+            <div id="testChat" class="test-chat">
+                <div class="test-chat-msg system">🏁 Нажми «Старт» для тренировки</div>
+            </div>
+        `;
+        garageGrid.appendChild(testCard);
+
+        // Сохраняем ссылки
+        this.els.testTrackSelect = document.getElementById('testTrackSelect');
+        this.els.testTireSelect = document.getElementById('testTireSelect');
+        this.els.testWeatherSelect = document.getElementById('testWeatherSelect');
+        this.els.testDifficultySelect = document.getElementById('testDifficultySelect');
+        this.els.testStart = document.getElementById('testStart');
+        this.els.testStop = document.getElementById('testStop');
+        this.els.testStatus = document.getElementById('testStatus');
+        this.els.testLapDisplay = document.getElementById('testLapDisplay');
+        this.els.testBestDisplay = document.getElementById('testBestDisplay');
+        this.els.testSpeedDisplay = document.getElementById('testSpeedDisplay');
+        this.els.testConfidenceDisplay = document.getElementById('testConfidenceDisplay');
+        this.els.testErsBar = document.getElementById('testErsBar');
+        this.els.testTyreBar = document.getElementById('testTyreBar');
+        this.els.testFuelBar = document.getElementById('testFuelBar');
+        this.els.testEnergyBar = document.getElementById('testEnergyBar');
+        this.els.testErsValue = document.getElementById('testErsValue');
+        this.els.testTyreValue = document.getElementById('testTyreValue');
+        this.els.testFuelValue = document.getElementById('testFuelValue');
+        this.els.testEnergyValue = document.getElementById('testEnergyValue');
+        this.els.testAttack = document.getElementById('testAttack');
+        this.els.testConserve = document.getElementById('testConserve');
+        this.els.testBox = document.getElementById('testBox');
+        this.els.testChat = document.getElementById('testChat');
+
+        // Обработчики
+        if (this.els.testStart) {
+            this.els.testStart.addEventListener('click', () => this.startTestDrive());
+            this.els.testStop.addEventListener('click', () => this.stopTestDrive());
+            this.els.testStop.disabled = true;
+            this.els.testAttack.addEventListener('click', () => this.testAction('attack'));
+            this.els.testConserve.addEventListener('click', () => this.testAction('conserve'));
+            this.els.testBox.addEventListener('click', () => this.testAction('box'));
+            this.els.testAttack.disabled = true;
+            this.els.testConserve.disabled = true;
+            this.els.testBox.disabled = true;
+        }
+    }
+
+    startTestDrive() {
+        if (this.test.running) return;
+        
+        const trackId = this.els.testTrackSelect?.value || 'monza';
+        this.test.track = F1.tracks.find(t => t.id === trackId) || F1.tracks[0];
+        this.test.tire = this.els.testTireSelect?.value || 'medium';
+        const weatherId = this.els.testWeatherSelect?.value || 'sunny';
+        this.test.weather = F1.weathers.find(w => w.id === weatherId) || F1.weathers[0];
+        const diffId = this.els.testDifficultySelect?.value || 'medium';
+        this.test.difficulty = F1.difficulties.find(d => d.id === diffId) || F1.difficulties[1];
+        
+        this.test.running = true;
+        this.test.lap = 0;
+        this.test.done = false;
+        this.test.ers = 85 + Math.random() * 10;
+        this.test.tyre = 70 + Math.random() * 15;
+        this.test.fuel = 90 + Math.random() * 8;
+        this.test.energy = 100;
+        this.test.bestLap = 999;
+        this.test.pitStops = 0;
+        this.test.waiting = false;
+        
+        const tireMap = { soft: 15, medium: 0, hard: -15 };
+        this.test.tyre = Math.min(100, this.test.tyre + tireMap[this.test.tire] || 0);
+        
+        this.els.testStart.disabled = true;
+        this.els.testStop.disabled = false;
+        this.els.testAttack.disabled = false;
+        this.els.testConserve.disabled = false;
+        this.els.testBox.disabled = false;
+        
+        this.els.testStatus.textContent = `🏁 Тренировка на ${this.test.track.name} | ${this.test.weather.label} | ${this.test.tire.toUpperCase()} | ${this.test.difficulty.label}`;
+        this.els.testStatus.style.color = '#4FC3F7';
+        this.els.testChat.innerHTML = `<div class="test-chat-msg system">🏁 Начало тренировки!</div>`;
+        
+        this.addGarageMessage('Инженер', `🏁 Тренировка на ${this.test.track.name} (${this.test.tire}, ${this.test.difficulty.label})`);
+        
+        if (this.test.timer) clearInterval(this.test.timer);
+        this.test.timer = setInterval(() => {
+            if (!this.test.done && this.test.running) {
+                this.testAutoProgress();
+            }
+        }, 1400);
+    }
+
+    testAutoProgress() {
+        if (this.test.done || this.test.waiting) return;
+        this.test.lap++;
+        
+        const diffFactor = this.test.difficulty.speed;
+        const weatherFactor = this.test.weather.grip;
+        const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
+        const tireWear = tireMap[this.test.tire] || 0.7;
+        
+        this.test.tyre = Math.max(0, this.test.tyre - (0.5 + Math.random() * 1.5) * diffFactor);
+        this.test.fuel = Math.max(0, this.test.fuel - (0.3 + Math.random() * 1) * diffFactor);
+        this.test.energy = Math.max(0, this.test.energy - 0.5 - Math.random() * 1);
+        this.test.ers = Math.min(100, this.test.ers + 0.5 + Math.random() * 0.5);
+        
+        const baseTime = 70 + Math.random() * 20;
+        const lapTime = (baseTime * tireMap[this.test.tire] * diffFactor) / (this.test.track.speed * weatherFactor) + Math.random() * 0.5;
+        
+        if (lapTime < this.test.bestLap) {
+            this.test.bestLap = lapTime;
+            this.addTestChat('🏆', `Новый лучший круг! ${lapTime.toFixed(3)}с`, 'best');
+        }
+        
+        this.els.testLapDisplay.textContent = `${this.test.lap}/${this.test.maxLaps}`;
+        this.els.testBestDisplay.textContent = this.test.bestLap < 999 ? `${this.test.bestLap.toFixed(3)}с` : '--:--';
+        
+        const speed = Math.round((80 / (lapTime + 10)) * 100 + 50);
+        this.els.testSpeedDisplay.textContent = speed;
+        
+        this.updateTestResources();
+        
+        if (this.test.tyre < 10 && Math.random() < 0.1) {
+            this.addTestChat('💥', 'ПРОКОЛ! Срочно в боксы!', 'penalty');
+            this.test.tyre = 5;
+            this.test.energy = Math.max(0, this.test.energy - 20);
+        }
+        
+        if (this.test.lap >= this.test.maxLaps) {
+            this.stopTestDrive();
+        }
+    }
+
+    testAction(action) {
+        if (this.test.done || this.test.waiting || !this.test.running) return;
+        this.test.waiting = true;
+        this.els.testAttack.disabled = true;
+        this.els.testConserve.disabled = true;
+        this.els.testBox.disabled = true;
+        
+        const diffFactor = this.test.difficulty.speed;
+        const weatherFactor = this.test.weather.grip;
+        const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
+        const tireWear = tireMap[this.test.tire] || 0.7;
+        
+        if (action === 'attack') {
+            this.test.ers = Math.max(0, this.test.ers - (5 + Math.random() * 4) * diffFactor * weatherFactor);
+            this.test.tyre = Math.max(0, this.test.tyre - (3 + Math.random() * 3) * tireWear);
+            this.test.fuel = Math.max(0, this.test.fuel - (2 + Math.random() * 2) * diffFactor);
+            this.test.energy = Math.max(0, this.test.energy - 3 - Math.random() * 4);
+            this.addTestChat('⚡', 'Атака! Расход ресурсов увеличен.', 'action');
+        } else if (action === 'conserve') {
+            this.test.ers = Math.min(100, this.test.ers + (2 + Math.random() * 2) * diffFactor);
+            this.test.tyre = Math.min(100, this.test.tyre + (1 + Math.random() * 2));
+            this.test.fuel = Math.max(0, this.test.fuel - (0.5 + Math.random() * 1));
+            this.test.energy = Math.min(100, this.test.energy + 2 + Math.random() * 3);
+            this.addTestChat('🛡️', 'Экономия! Ресурсы восстанавливаются.', 'action');
+        } else if (action === 'box') {
+            this.test.pitStops++;
+            this.test.tyre = Math.min(100, this.test.tyre + 25 + Math.random() * 20);
+            this.test.ers = Math.min(100, this.test.ers + 2 + Math.random() * 5);
+            this.test.fuel = Math.max(0, this.test.fuel - (3 + Math.random() * 2));
+            this.test.energy = Math.min(100, this.test.energy + 8);
+            this.addTestChat('🔧', `Пит-стоп #${this.test.pitStops}! Шины заменены.`, 'action');
+        }
+        
+        this.updateTestResources();
+        
+        this.test.waiting = false;
+        this.els.testAttack.disabled = false;
+        this.els.testConserve.disabled = false;
+        this.els.testBox.disabled = false;
+    }
+
+    addTestChat(icon, text, type = 'system') {
+        const container = this.els.testChat;
+        if (!container) return;
+        const msg = document.createElement('div');
+        msg.className = `test-chat-msg ${type}`;
+        msg.textContent = `${icon} ${text}`;
+        container.appendChild(msg);
+        container.scrollTop = container.scrollHeight;
+        if (container.children.length > 20) container.removeChild(container.firstChild);
+    }
+
+    updateTestResources() {
+        const t = this.test;
+        if (this.els.testErsBar) {
+            this.els.testErsBar.style.width = Math.min(100, Math.max(0, t.ers)) + '%';
+            this.els.testTyreBar.style.width = Math.min(100, Math.max(0, t.tyre)) + '%';
+            this.els.testFuelBar.style.width = Math.min(100, Math.max(0, t.fuel)) + '%';
+            this.els.testEnergyBar.style.width = Math.min(100, Math.max(0, t.energy)) + '%';
+            this.els.testErsValue.textContent = Math.round(Math.min(100, Math.max(0, t.ers))) + '%';
+            this.els.testTyreValue.textContent = Math.round(Math.min(100, Math.max(0, t.tyre))) + '%';
+            this.els.testFuelValue.textContent = Math.round(Math.min(100, Math.max(0, t.fuel))) + '%';
+            this.els.testEnergyValue.textContent = Math.round(Math.min(100, Math.max(0, t.energy))) + '%';
+        }
+        this.confidence = Math.min(100, this.confidence + 0.1);
+        if (this.els.testConfidenceDisplay) {
+            this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+        }
+    }
+
+    stopTestDrive() {
+        this.test.running = false;
+        this.test.done = true;
+        if (this.test.timer) {
+            clearInterval(this.test.timer);
+            this.test.timer = null;
+        }
+        
+        if (this.els.testStart) {
+            this.els.testStart.disabled = false;
+            this.els.testStop.disabled = true;
+            this.els.testAttack.disabled = true;
+            this.els.testConserve.disabled = true;
+            this.els.testBox.disabled = true;
+        }
+        
+        if (this.test.bestLap < 999) {
+            const best = this.test.bestLap;
+            let grade = 'Нужно тренироваться!';
+            let emoji = '📈';
+            if (best < 75) { grade = '🔥 Отлично! Ты готов к гонке!'; emoji = '🏆'; }
+            else if (best < 85) { grade = '💪 Хорошо! Есть потенциал!'; emoji = '💪'; }
+            else if (best < 100) { grade = '👍 Неплохо, но можно лучше!'; emoji = '📈'; }
+            
+            if (this.els.testStatus) {
+                this.els.testStatus.textContent = `✅ Тренировка завершена! ${emoji} ${grade}`;
+                this.els.testStatus.style.color = '#00E676';
+            }
+            
+            this.addTestChat('📊', `Лучший круг: ${best.toFixed(3)}с — ${grade}`, 'system');
+            this.addGarageMessage('Инженер', `📊 Тренировка: лучший круг ${best.toFixed(3)}с — ${grade}`);
+            
+            if (best < 85) {
+                this.confidence = Math.min(100, this.confidence + 10);
+                if (this.els.testConfidenceDisplay) {
+                    this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+                }
+            }
+        } else if (this.els.testStatus) {
+            this.els.testStatus.textContent = '⏹ Тренировка остановлена';
+            this.els.testStatus.style.color = '#FF6B35';
+        }
+        
+        this.updateStats();
+    }
+
+    // ============================================================
+    // 7. ИГРА (ОСНОВНАЯ ЛОГИКА)
+    // ============================================================
+    setupGame() {
+        this.els.btnGas?.addEventListener('click', () => this.handleGas());
+        this.els.btnAttack?.addEventListener('click', () => this.handleAction('attack'));
+        this.els.btnConserve?.addEventListener('click', () => this.handleAction('conserve'));
+        this.els.btnBox?.addEventListener('click', () => this.handleAction('box'));
+        this.els.btnStewards?.addEventListener('click', () => this.handleAction('penalty'));
+        this.els.btnTires?.addEventListener('click', () => {
+            if (this.els.tireSelect) {
+                this.els.tireSelect.style.display = this.els.tireSelect.style.display === 'none' ? 'grid' : 'none';
+            }
+        });
+        this.els.btnStartRace?.addEventListener('click', () => this.startRace());
+
+        if (this.els.tireSelect) {
+            this.els.tireSelect.querySelectorAll('.tire-opt').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this.els.tireSelect.querySelectorAll('.tire-opt').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    this.selectedTire = btn.dataset.tire;
+                    this.addChat('Стратегия', `Переход на ${this.selectedTire}`, 'team');
+                });
+            });
+        }
+
+        this.els.btnNext?.addEventListener('click', () => this.nextRound());
+        this.els.gameReset?.addEventListener('click', () => this.resetGame());
+    }
+
+    // ─── СЕЗОН ─────────────────────────────────────────────────────
+    startSeason() {
+        this.currentRound = 0;
+        this.championship = {};
+        this.constructorsChamp = {};
+        F1.drivers.forEach(d => this.championship[d.name] = 0);
+        F1.teams.forEach(t => this.constructorsChamp[t.name] = 0);
+        this.stats = { races: 0, wins: 0, podiums: 0, points: 0, fastestLaps: 0 };
+        this.pilotBoosts = { attack: 0, defense: 0, rain: 0, start: 0, fuel: 0, qualy: 0 };
+        this.confidence = 50;
+        this.updateStats();
+        this.renderStandings();
+        this.startRound();
+    }
+
+    startRound() {
+        const calendar = F1.calendar[this.currentRound];
+        if (!calendar) return;
+
+        const track = F1.tracks.find(t => t.id === calendar.trackId);
+        this.race.track = track;
+        this.race.maxLaps = track.laps || 40;
+        this.race.weather = F1.weathers[Math.floor(Math.random() * F1.weathers.length)];
+        this.weatherForecast = 3 + Math.floor(Math.random() * 4);
+        this.weatherChange = false;
+
+        if (this.els.gameRound) this.els.gameRound.textContent = `ЭТАП ${this.currentRound + 1}/${this.totalRounds}`;
+        if (this.els.gameTrack) this.els.gameTrack.textContent = track.name;
+        if (this.els.gameLap) this.els.gameLap.textContent = `0 / ${this.race.maxLaps}`;
+
+        this.race.lap = 0;
+        this.race.done = false;
+        this.race.overtakes = [];
+        this.race.penalties = 0;
+        this.race.points = 0;
+        this.race.ers = 85 + Math.random() * 10;
+        this.race.tyre = 70 + Math.random() * 15;
+        this.race.fuel = 90 + Math.random() * 8;
+        this.race.energy = 100;
+        this.race.fastestLap = false;
+        this.race.fastestLapTime = 999;
+        this.race.pitStops = 0;
+        this.race.dotd = null;
+        this.race.penaltyHistory = [];
+        this.race.running = false;
+
+        this.applyBoostsToRace();
+        this.generateGrid();
+
+        this.phase = 'qualy';
+        this.qualy.clicks = 0;
+        this.qualy.time = 10;
+        this.qualy.active = true;
+        this.qualy.done = false;
+
+        if (this.els.qualyView) this.els.qualyView.style.display = 'block';
+        if (this.els.raceView) this.els.raceView.style.display = 'none';
+        if (this.els.protocolView) this.els.protocolView.style.display = 'none';
+        if (this.els.btnGas) this.els.btnGas.disabled = false;
+        if (this.els.btnStartRace) this.els.btnStartRace.disabled = true;
+        if (this.els.qualyTimer) this.els.qualyTimer.textContent = '10.0с';
+        if (this.els.qualyClicks) this.els.qualyClicks.textContent = '0 кликов';
+
+        this.renderQualyGrid();
+
+        if (this.qualy.timer) clearInterval(this.qualy.timer);
+        this.qualy.timer = setInterval(() => {
+            this.qualy.time -= 0.1;
+            if (this.els.qualyTimer) this.els.qualyTimer.textContent = `${this.qualy.time.toFixed(1)}с`;
+            if (this.qualy.time <= 0) {
+                clearInterval(this.qualy.timer);
+                this.finishQualifying();
+            }
+        }, 100);
+
+        if (this.els.chatMessages) {
+            this.els.chatMessages.innerHTML = '';
+            this.addChat('КВАЛИФИКАЦИЯ', `Начинается квалификация на Гран-при ${track.name}! Жми ГАЗ!`, 'qualy');
+        }
+    }
+
+    applyBoostsToRace() {
+        const b = this.pilotBoosts;
+        const r = this.race;
+        if (b.attack > 0) { r.ers = Math.min(100, r.ers + b.attack * 0.5); this.addChat('БУСТ', `+${b.attack}% к атаке!`, 'press'); }
+        if (b.defense > 0) { r.tyre = Math.min(100, r.tyre + b.defense * 0.3); this.addChat('БУСТ', `+${b.defense}% к защите!`, 'press'); }
+        if (b.rain > 0 && r.weather?.rain > 0.3) { r.weather.grip = Math.min(1.0, r.weather.grip + b.rain * 0.01); this.addChat('БУСТ', `+${b.rain}% в дождь!`, 'press'); }
+        if (b.start > 0) { r.energy = Math.min(100, r.energy + b.start * 0.5); this.addChat('БУСТ', `+${b.start}% на старте!`, 'press'); }
+        if (b.fuel > 0) { r.fuel = Math.min(100, r.fuel + b.fuel * 0.5); this.addChat('БУСТ', `-${b.fuel}% топлива!`, 'press'); }
+    }
+
+    generateGrid() {
+        const drivers = [...F1.drivers];
+        for (let i = drivers.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [drivers[i], drivers[j]] = [drivers[j], drivers[i]];
+        }
+        this.race.positions = drivers;
+        this.race.playerPos = drivers.indexOf(this.playerPilot) + 1;
+    }
+
+    renderQualyGrid() {
+        const container = this.els.qualyGrid;
+        if (!container) return;
+        container.innerHTML = '';
+        this.race.positions.forEach((d, i) => {
+            const isPlayer = d.name === this.playerPilot.name;
+            const row = document.createElement('div');
+            row.className = `qualy-row ${isPlayer ? 'player' : ''}`;
+            const pos = i + 1;
+            const posClass = pos === 1 ? 'p1' : pos <= 3 ? 'top3' : '';
+            row.innerHTML = `<span class="qpos ${posClass}">P${pos}</span><span>${isPlayer ? '★ ' : ''}${d.name}</span><span>${F1.teams.find(t => t.name === d.team)?.name || ''}</span>`;
+            container.appendChild(row);
+        });
+    }
+
+    handleGas() {
+        if (!this.qualy.active || this.qualy.done) return;
+        this.qualy.clicks++;
+        if (this.els.qualyClicks) this.els.qualyClicks.textContent = `${this.qualy.clicks} кликов`;
+        const btn = this.els.btnGas;
+        if (btn) {
+            btn.style.transform = 'scale(0.92)';
+            setTimeout(() => btn.style.transform = 'scale(1)', 50);
+            btn.innerHTML = `<span class="gas-icon">⏱️</span><span class="gas-label">ГАЗ</span><span class="gas-sub">${this.qualy.clicks} кликов!</span>`;
+        }
+        const estimatedPos = Math.max(1, 20 - Math.floor(this.qualy.clicks / 4));
+        if (this.els.qualyPosition) this.els.qualyPosition.textContent = `Старт: P${estimatedPos}`;
+    }
+
+    finishQualifying() {
+        this.qualy.active = false;
+        this.qualy.done = true;
+        if (this.els.btnGas) this.els.btnGas.disabled = true;
+
+        const allPilots = [...F1.drivers];
+        const playerClicks = this.qualy.clicks;
+        const aiClicks = allPilots.map(p => {
+            if (p.name === this.playerPilot.name) return playerClicks;
+            return Math.floor(Math.random() * 60) + 10 + Math.random() * 30;
+        });
+
+        const sorted = allPilots.map((p, i) => ({ pilot: p, clicks: aiClicks[i] }));
+        sorted.sort((a, b) => b.clicks - a.clicks);
+        this.race.positions = sorted.map(x => x.pilot);
+        this.race.playerPos = this.race.positions.indexOf(this.playerPilot) + 1;
+
+        this.addChat('КВАЛИФИКАЦИЯ', `${this.playerPilot.name} стартует P${this.race.playerPos}! (${this.qualy.clicks} кликов)`, 'qualy');
+
+        if (this.els.qualyView) this.els.qualyView.style.display = 'none';
+        if (this.els.raceView) this.els.raceView.style.display = 'block';
+        if (this.els.btnStartRace) this.els.btnStartRace.disabled = false;
+        if (this.els.chatMessages) {
+            this.els.chatMessages.innerHTML = '';
+            this.addChat('СИСТЕМА', 'Квалификация завершена! Нажмите «Старт» для начала гонки.', 'system');
+        }
+
+        this.renderLapTrack();
+        this.renderRaceGrid();
+        this.updateStatusBars();
+    }
+
+    // ─── ЗАПУСК ГОНКИ ─────────────────────────────────────────────
+    startRace() {
+        if (this.race.running || this.race.done) return;
+        this.race.running = true;
+        if (this.els.btnStartRace) this.els.btnStartRace.disabled = true;
+
+        const tireMap = { soft: 15, medium: 0, hard: -15 };
+        this.race.tyre = Math.min(100, this.race.tyre + tireMap[this.selectedTire] || 0);
+
+        this.addChat('СТАРТ', `Гонка началась! ${this.race.maxLaps} кругов. ${this.selectedTire.toUpperCase()} шины.`, 'system');
+        this.addChat('ИНЖЕНЕР', 'Хороший старт! Действуй по плану.', 'engineer');
+
+        document.querySelectorAll('.btn-race').forEach(b => b.disabled = false);
+
+        if (this.race.timer) clearInterval(this.race.timer);
+        this.race.timer = setInterval(() => {
+            if (!this.race.done && this.race.running) {
+                this.autoProgress();
+            }
+        }, 1100);
+    }
+
+    autoProgress() {
+        if (this.race.done || this.race.waiting || this.race.lap >= this.race.maxLaps) return;
+
+        this.simulateAI();
+        this.renderLapTrack();
+        this.renderRaceGrid();
+        this.updateStatusBars();
+
+        if (this.race.lap > 0 && this.race.lap % 5 === 0 && !this.race.done) {
+            this.sendEngineerMessage();
+        }
+
+        if (this.weatherForecast > 0 && !this.weatherChange) {
+            this.weatherForecast--;
+            if (this.weatherForecast === 0) {
+                const newWeather = F1.weathers.find(w => w.rain > this.race.weather.rain + 0.1) || this.race.weather;
+                if (newWeather !== this.race.weather) {
+                    this.race.weather = newWeather;
+                    this.addChat('ПОГОДА', `Начался ${this.race.weather.label.toLowerCase()}!`, 'weather');
+                    this.weatherChange = true;
+                }
+            }
+        }
+
+        if (this.race.lap >= this.race.maxLaps) {
+            clearInterval(this.race.timer);
+            this.finishRace();
+        }
+    }
+
+    simulateAI() {
+        this.race.lap++;
+
+        for (let i = 0; i < this.race.positions.length - 1; i++) {
+            if (Math.random() < 0.15) {
+                const swapIdx = i + 1;
+                [this.race.positions[i], this.race.positions[swapIdx]] = [this.race.positions[swapIdx], this.race.positions[i]];
+            }
+        }
+
+        const playerIdx = this.race.positions.indexOf(this.playerPilot);
+        if (playerIdx > 0 && Math.random() < 0.05) {
+            const front = this.race.positions[playerIdx - 1];
+            this.race.positions[playerIdx] = front;
+            this.race.positions[playerIdx - 1] = this.playerPilot;
+            this.addChat('ПРОПУСТИЛ', `${this.playerPilot.name} пропустил ${front.name}!`, 'system');
+        }
+
+        this.race.playerPos = this.race.positions.indexOf(this.playerPilot) + 1;
+        if (this.els.gameLap) this.els.gameLap.textContent = `${this.race.lap} / ${this.race.maxLaps}`;
+
+        this.race.tyre = Math.max(0, this.race.tyre - 1 - Math.random() * 2);
+        this.race.fuel = Math.max(0, this.race.fuel - 0.5 - Math.random() * 1);
+        this.race.energy = Math.max(0, this.race.energy - 0.3 - Math.random() * 0.7);
+        this.race.ers = Math.min(100, this.race.ers + 0.5 + Math.random() * 0.5);
+    }
+
+    // ─── ДЕЙСТВИЯ ИГРОКА ──────────────────────────────────────────
+    handleAction(action) {
+        if (this.race.done || this.race.waiting || !this.race.running) return;
+        this.race.waiting = true;
+        document.querySelectorAll('.btn-race').forEach(b => b.disabled = true);
+
+        const r = this.race;
+        const trackFactor = r.track?.speed || 1.0;
+        const weatherFactor = r.weather?.rain > 0.5 ? 1.5 : 1.0;
+        const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
+        const tireWear = tireMap[this.selectedTire] || 0.7;
+        const attackBoost = 1 + (this.pilotBoosts.attack || 0) / 100;
+        const defenseBoost = 1 + (this.pilotBoosts.defense || 0) / 100;
+
+        if (action === 'attack') {
+            r.ers = Math.max(0, r.ers - (7 + Math.random() * 5) * trackFactor * weatherFactor / attackBoost);
+            r.tyre = Math.max(0, r.tyre - (4 + Math.random() * 4) * (1 + tireWear * 0.5));
+            r.fuel = Math.max(0, r.fuel - (3 + Math.random() * 3) * (r.track?.fuelCons || 1));
+            r.energy = Math.max(0, r.energy - 5 - Math.random() * 5);
+
+            const playerIdx = r.positions.indexOf(this.playerPilot);
+            if (playerIdx > 0) {
+                let baseChance = 0.3 + (r.ers > 70 ? 0.2 : 0) + (r.tyre > 50 ? 0.1 : 0);
+                baseChance *= attackBoost;
+                if (Math.random() < baseChance * trackFactor * (r.weather?.grip || 1)) {
+                    const front = r.positions[playerIdx - 1];
+                    r.positions[playerIdx] = front;
+                    r.positions[playerIdx - 1] = this.playerPilot;
+                    r.overtakes.push(front);
+                    this.addChat('ОБГОН', `${this.playerPilot.name} обошёл ${front.name}!`, 'pilot');
+                } else if (Math.random() < 0.04) {
+                    r.penalties += 5;
+                    r.penaltyHistory.push(r.lap);
+                    this.addChat('ШТРАФ', `${this.playerPilot.name} +5 секунд за вытеснение!`, 'penalty');
+                }
+            }
+        } else if (action === 'conserve') {
+            r.ers = Math.min(100, r.ers + (3 + Math.random() * 3) * trackFactor);
+            r.tyre = Math.min(100, r.tyre + (2 + Math.random() * 2));
+            r.fuel = Math.max(0, r.fuel - (1 + Math.random() * 1.5) / defenseBoost);
+            r.energy = Math.min(100, r.energy + 3 + Math.random() * 4);
+            this.addChat('ЭКОНОМ', 'Экономия ресурсов.', 'system');
+        } else if (action === 'box') {
+            r.pitStops++;
+            r.tyre = Math.min(100, r.tyre + 25 + Math.random() * 20);
+            r.ers = Math.min(100, r.ers + 3 + Math.random() * 6);
+            r.fuel = Math.max(0, r.fuel - (4 + Math.random() * 3));
+            r.energy = Math.min(100, r.energy + 10);
+            this.addChat('ПИТ-СТОП', `Пит-стоп #${r.pitStops} выполнен.`, 'team');
+        } else if (action === 'penalty') {
+            if (r.penalties > 0) {
+                const remove = Math.floor(Math.random() * 3) + 1;
+                r.penalties = Math.max(0, r.penalties - remove);
+                this.addChat('СТЮАРДЫ', `Снято ${remove} секунд штрафа. Осталось: ${r.penalties}с`, 'penalty');
+            } else if (Math.random() < 0.15) {
+                const idx = r.positions.indexOf(this.playerPilot);
+                if (idx > 0) {
+                    const front = r.positions[idx - 1];
+                    r.positions[idx] = front;
+                    r.positions[idx - 1] = this.playerPilot;
+                    this.addChat('СТЮАРДЫ', `Протест принят! ${front.name} наказан!`, 'penalty');
+                }
+            } else {
+                this.addChat('СТЮАРДЫ', 'Стюарды не нашли нарушений.', 'system');
+            }
+        }
+
+        if (action === 'attack' && r.ers > 60 && Math.random() < 0.2) {
+            const lapTime = 60 + Math.random() * 5 - (r.ers / 100) * 2;
+            if (lapTime < r.fastestLapTime) {
+                r.fastestLapTime = lapTime;
+                r.fastestLap = true;
+                this.addChat('БЫСТРЫЙ КРУГ', `${this.playerPilot.name} показал лучшее время!`, 'pilot');
+            }
+        }
+
+        if (r.tyre < 10 && Math.random() < 0.1) {
+            this.addChat('ПРОКОЛ', `${this.playerPilot.name} проколол шину! Срочно в боксы!`, 'penalty');
+            r.tyre = 5;
+            r.energy = Math.max(0, r.energy - 20);
+        }
+
+        this.updateStatusBars();
+        this.renderRaceGrid();
+
+        this.race.waiting = false;
+        document.querySelectorAll('.btn-race').forEach(b => b.disabled = false);
+    }
+
+    // ─── RENDER ────────────────────────────────────────────────────
+    renderLapTrack() {
+        const container = this.els.lapTrack;
+        if (!container) return;
+        container.innerHTML = '';
+        const total = Math.min(this.race.maxLaps, 60);
+        for (let i = 0; i < total; i++) {
+            const dot = document.createElement('span');
+            dot.className = 'lap-dot';
+            if (i < this.race.lap) dot.classList.add('done');
+            if (i === this.race.lap && !this.race.done) dot.classList.add('active');
+            if (this.race.penaltyHistory.includes(i)) dot.classList.add('penalty');
+            if (this.race.fastestLap && i === this.race.lap - 1) dot.classList.add('fastest');
+            container.appendChild(dot);
+        }
+    }
+
+    renderRaceGrid() {
+        const container = this.els.raceGrid;
+        if (!container) return;
+        const top = this.race.positions.slice(0, 20);
+        let html = `<div class="race-grid-header"><span>POS</span><span>DRIVER</span><span>GAP</span><span>PTS</span></div>`;
+        top.forEach((d, i) => {
+            const pos = i + 1;
+            const isPlayer = d.name === this.playerPilot.name;
+            const posClass = pos === 1 ? 'p1' : pos <= 3 ? 'top3' : '';
+            const gap = pos === 1 ? 'LEAD' : `+${((pos - 1) * 0.3 + Math.random() * 0.2).toFixed(1)}s`;
+            const pts = this.championship[d.name] || 0;
+            html += `<div class="race-row ${isPlayer ? 'player' : ''}">
+                <span class="rpos ${posClass}">P${pos}</span>
+                <span class="rname">${isPlayer ? '<span class="star">★</span> ' : ''}${d.name}${i === 1 ? ' <span class="invest">!</span>' : ''}${i === 2 ? ' <span class="fast">✦</span>' : ''}</span>
+                <span class="rgap ${pos === 1 ? 'lead' : 'down'}">${gap}</span>
+                <span class="rpts">${pts > 0 ? pts : ''}</span>
+            </div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    updateStatusBars() {
+        const r = this.race;
+        if (this.els.ersBar) this.els.ersBar.style.width = Math.min(100, Math.max(0, r.ers)) + '%';
+        if (this.els.tyreBar) this.els.tyreBar.style.width = Math.min(100, Math.max(0, r.tyre)) + '%';
+        if (this.els.fuelBar) this.els.fuelBar.style.width = Math.min(100, Math.max(0, r.fuel)) + '%';
+        if (this.els.energyBar) this.els.energyBar.style.width = Math.min(100, Math.max(0, r.energy)) + '%';
+        if (this.els.ersValue) this.els.ersValue.textContent = Math.round(Math.min(100, Math.max(0, r.ers))) + '%';
+        if (this.els.tyreValue) this.els.tyreValue.textContent = Math.round(Math.min(100, Math.max(0, r.tyre))) + '%';
+        if (this.els.fuelValue) this.els.fuelValue.textContent = Math.round(Math.min(100, Math.max(0, r.fuel))) + '%';
+        if (this.els.energyValue) this.els.energyValue.textContent = Math.round(Math.min(100, Math.max(0, r.energy))) + '%';
+    }
+
+    // ─── ЧАТ ──────────────────────────────────────────────────────
+    addChat(label, text, type = 'system') {
+        const container = this.els.chatMessages;
+        if (!container) return;
+        const msg = document.createElement('div');
+        msg.className = `chat-msg ${type}`;
+        msg.innerHTML = `<span class="label">${label}</span> ${text}`;
+        container.appendChild(msg);
+        container.scrollTop = container.scrollHeight;
+        if (container.children.length > 30) container.removeChild(container.firstChild);
+    }
+
+    sendEngineerMessage() {
+        const msgs = [
+            'Окей, давим, соперник на 0.8с',
+            'Береги резину, нам нужно 5 кругов',
+            'Ты быстрее всех в середине пелотона!',
+            'Соперник сзади на 0.5с, защищайся',
+            'Отличный темп, так держать!',
+            'Сейчас окно для атаки, действуй!',
+            'Экономь топливо, до финиша 10 кругов',
+            'Впереди трафик, будь осторожен',
+            'Шины начинают сдавать, береги',
+            'Отличный круг! Продолжай в том же духе!'
+        ];
+        this.addChat('ИНЖЕНЕР', msgs[Math.floor(Math.random() * msgs.length)], 'engineer');
+    }
+
+    // ─── СТАТИСТИКА ──────────────────────────────────────────────
+    updateStats() {
+        const s = this.stats;
+        if (this.els.statRaces) this.els.statRaces.textContent = s.races;
+        if (this.els.statWins) this.els.statWins.textContent = s.wins;
+        if (this.els.statPodiums) this.els.statPodiums.textContent = s.podiums;
+        if (this.els.statPoints) this.els.statPoints.textContent = s.points;
+        if (this.els.statFastest) this.els.statFastest.textContent = s.fastestLaps;
+    }
+
+    // ─── ЗАЧЁТ ────────────────────────────────────────────────────
+    renderStandings() {
+        // Пилоты
+        const sorted = Object.entries(this.championship).sort((a, b) => b[1] - a[1]).slice(0, 20);
+        let html = `<div class="standings-table"><div class="st-header"><span>POS</span><span>DRIVER</span><span>TEAM</span><span>PTS</span></div>`;
+        sorted.forEach(([name, pts], i) => {
+            const driver = F1.drivers.find(d => d.name === name);
+            const isPlayer = name === this.playerPilot?.name;
+            html += `<div class="st-row ${i === 0 ? 'leader' : ''} ${isPlayer ? 'player' : ''}">
+                <span class="st-pos ${i < 3 ? 'top3' : ''} ${i === 0 ? 'p1' : ''}">${i + 1}</span>
+                <span class="st-name">${isPlayer ? '★ ' : ''}${name}</span>
+                <span class="st-team">${driver ? driver.team : '—'}</span>
+                <span class="st-pts">${pts}</span>
+            </div>`;
+        });
+        html += '</div>';
+        if (this.els.driversStandings) this.els.driversStandings.innerHTML = html;
+
+        // Команды
+        const cSorted = Object.entries(this.constructorsChamp).sort((a, b) => b[1] - a[1]).slice(0, 11);
+        let cHtml = `<div class="standings-table"><div class="st-header"><span>POS</span><span>TEAM</span><span>PTS</span></div>`;
+        cSorted.forEach(([name, pts], i) => {
+            const isPlayer = name === this.playerTeam?.name;
+            cHtml += `<div class="st-row ${i === 0 ? 'leader' : ''} ${isPlayer ? 'player' : ''}">
+                <span class="st-pos ${i < 3 ? 'top3' : ''} ${i === 0 ? 'p1' : ''}">${i + 1}</span>
+                <span class="st-name">${isPlayer ? '★ ' : ''}${name}</span>
+                <span class="st-pts">${pts}</span>
+            </div>`;
+        });
+        cHtml += '</div>';
+        if (this.els.constructorsStandings) this.els.constructorsStandings.innerHTML = cHtml;
+    }
+
+    // ─── ФИНИШ ────────────────────────────────────────────────────
+    finishRace() {
+        this.race.done = true;
+        this.race.running = false;
+        document.querySelectorAll('.btn-race').forEach(b => b.disabled = true);
+        if (this.race.timer) clearInterval(this.race.timer);
+
+        const finalPos = this.race.positions.indexOf(this.playerPilot) + 1;
+        const pointsMap = {1:25,2:18,3:15,4:12,5:10,6:8,7:6,8:4,9:2,10:1};
+        const earned = pointsMap[finalPos] || 0;
+        const bonus = this.race.fastestLap ? 1 : 0;
+        this.race.points = earned + bonus;
+
+        this.race.positions.forEach((d, i) => {
+            const pos = i + 1;
+            const pts = pointsMap[pos] || 0;
+            this.championship[d.name] = (this.championship[d.name] || 0) + pts;
+        });
+
+        this.race.positions.forEach((d, i) => {
+            const pos = i + 1;
+            const pts = pointsMap[pos] || 0;
+            const team = F1.teams.find(t => t.name === d.team);
+            if (team) this.constructorsChamp[team.name] = (this.constructorsChamp[team.name] || 0) + pts;
+        });
+
+        const progress = this.race.positions.map((d, i) => {
+            const startIdx = this.race.positions.indexOf(d);
+            return { name: d.name, progress: startIdx - i };
+        });
+        progress.sort((a, b) => b.progress - a.progress);
+        this.race.dotd = progress[0]?.name || this.playerPilot.name;
+
+        this.stats.races++;
+        if (finalPos <= 3) this.stats.podiums++;
+        if (finalPos === 1) this.stats.wins++;
+        this.stats.points += this.race.points;
+        if (this.race.fastestLap) this.stats.fastestLaps++;
+        this.updateStats();
+
+        if (this.els.raceView) this.els.raceView.style.display = 'none';
+        if (this.els.protocolView) this.els.protocolView.style.display = 'block';
+
+        if (this.els.pFinish) this.els.pFinish.textContent = `P${finalPos}`;
+        if (this.els.pPoints) this.els.pPoints.textContent = this.race.points;
+        if (this.els.pPenalties) this.els.pPenalties.textContent = this.race.penalties + 'с';
+        if (this.els.pOvertakes) this.els.pOvertakes.textContent = this.race.overtakes.length;
+        if (this.els.pFastest) this.els.pFastest.textContent = this.race.fastestLap ? '✅ +1 очко' : '—';
+        if (this.els.pDotd) this.els.pDotd.textContent = this.race.dotd;
+
+        let verdict = '';
+        if (finalPos <= 3) verdict = '🏆 Подиум! Отличная стратегия!';
+        else if (finalPos <= 8) verdict = '👍 Очки есть. Хорошая работа!';
+        else verdict = '😬 Тяжёлая гонка. Анализируй ошибки.';
+        if (this.race.penalties > 10) verdict += ' ⚠️ Много штрафов!';
+        if (this.els.pResult) this.els.pResult.textContent = verdict;
+
+        this.addChat('ФИНИШ', `${this.playerPilot.name} финиширует P${finalPos}! +${this.race.points} очков`, 'system');
+        this.renderStandings();
+
+        setTimeout(() => {
+            this.showPressConference();
+        }, 1200);
+
+        this.addGarageMessage('📊 ИТОГО', `${this.playerPilot.name} — P${finalPos}, +${this.race.points} очков`);
+    }
+
+    // ─── ПРЕСС-КОНФЕРЕНЦИЯ (ИСПРАВЛЕНА) ──────────────────────────
+    showPressConference() {
+        const boostCount = Object.values(this.pilotBoosts).filter(v => v > 0).length;
+        const questions = this.generatePressQuestions(Math.min(boostCount + 1, 3));
+        
+        // Если вопросов нет — пропускаем
+        if (!questions || questions.length === 0) {
+            if (this.els.btnNext) {
+                this.els.btnNext.style.display = 'block';
+                if (this.currentRound >= this.totalRounds - 1) {
+                    this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
+                } else {
+                    this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
+                }
+            }
+            return;
+        }
+        
+        const modal = document.createElement('div');
+        modal.className = 'press-modal';
+        
+        let answersHtml = '';
+        questions.forEach((q, qi) => {
+            answersHtml += `
+                <div class="press-question" data-q="${qi}" style="display:${qi === 0 ? 'block' : 'none'}">
+                    <div class="press-q">"${q.question}"</div>
+                    <div class="press-answers">
+                        ${q.answers.map((a, ai) => `
+                            <button class="press-answer" data-q="${qi}" data-answer="${ai}" data-bonus="${a.bonus}">
+                                ${a.text}
+                                <span class="press-effect">${a.effect}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        modal.innerHTML = `
+            <div class="press-box">
+                <h3>🎙️ ПРЕСС-КОНФЕРЕНЦИЯ</h3>
+                <div class="press-sub">Ответь на вопросы журналистов и получи бонусы!</div>
+                <div id="pressQuestions">
+                    ${answersHtml}
+                </div>
+                <div class="press-result" id="pressResult" style="display:none;"></div>
+                <button class="press-close" id="pressClose" style="display:none;">▶ Продолжить</button>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        let currentQuestion = 0;
+        const totalQuestions = questions.length;
+        
+        const showQuestion = (index) => {
+            const allQs = modal.querySelectorAll('.press-question');
+            allQs.forEach((q, i) => {
+                q.style.display = i === index ? 'block' : 'none';
+            });
+        };
+        
+        showQuestion(0);
+        
+        modal.querySelectorAll('.press-answer').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const bonus = this.dataset.bonus;
+                this.applyBoost(bonus);
+                
+                const container = this.closest('.press-question');
+                container.querySelectorAll('.press-answer').forEach(b => {
+                    b.disabled = true;
+                    b.style.opacity = '0.4';
+                    b.style.cursor = 'default';
+                });
+                
+                this.style.opacity = '1';
+                this.style.borderColor = '#FFD700';
+                this.style.background = 'rgba(255,215,0,0.08)';
+                
+                const result = modal.querySelector('#pressResult');
+                result.style.display = 'block';
+                result.innerHTML = `✅ Бонус активирован: <strong>${this.querySelector('.press-effect').textContent}</strong>`;
+                result.style.color = '#00E676';
+                
+                setTimeout(() => {
+                    currentQuestion++;
+                    
+                    if (currentQuestion < totalQuestions) {
+                        result.style.display = 'none';
+                        showQuestion(currentQuestion);
+                    } else {
+                        const closeBtn = modal.querySelector('#pressClose');
+                        closeBtn.style.display = 'block';
+                        result.innerHTML = `🎉 Отлично! Все вопросы отвечены! Бусты получены.`;
+                        result.style.color = '#FFD700';
+                        this.addChat('ПРЕСС-КОНФЕРЕНЦИЯ', `${this.playerPilot.name} дал интервью! Получены бонусы.`, 'press');
+                        this.renderStandings();
+                        this.updateStats();
+                    }
+                }, 1200);
+            });
+        });
+        
+        modal.querySelector('#pressClose').addEventListener('click', () => {
+            modal.remove();
+            if (this.els.btnNext) {
+                this.els.btnNext.style.display = 'block';
+                if (this.currentRound >= this.totalRounds - 1) {
+                    this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
+                } else {
+                    this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
+                }
+            }
+        });
+    }
+
+    generatePressQuestions(count) {
+        const allQuestions = [
+            {
+                question: 'Как ты оцениваешь свою гонку?',
+                answers: [
+                    { text: 'Я был слишком агрессивен', effect: '+5% к атаке', bonus: 'attack' },
+                    { text: 'Мне нужна стабильность', effect: '+10% к защите', bonus: 'defense' },
+                    { text: 'Погода мой конёк!', effect: '+15% сцепление в дождь', bonus: 'rain' }
+                ]
+            },
+            {
+                question: 'Что будешь менять в следующей гонке?',
+                answers: [
+                    { text: 'Буду агрессивнее в старте', effect: '+10% на старте', bonus: 'start' },
+                    { text: 'Сфокусируюсь на экономии', effect: '-15% расход топлива', bonus: 'fuel' },
+                    { text: 'Буду работать над квалификацией', effect: '+5% в квалификации', bonus: 'qualy' }
+                ]
+            },
+            {
+                question: 'Какой у тебя главный соперник?',
+                answers: [
+                    { text: 'Ферстаппен — слишком быстр', effect: '+8% концентрация', bonus: 'attack' },
+                    { text: 'Хэмилтон — опытен', effect: '+10% защита', bonus: 'defense' },
+                    { text: 'Норрис — мой друг', effect: '+10% к атаке в дуэлях', bonus: 'attack' }
+                ]
+            }
+        ];
+        
+        const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, Math.min(count, shuffled.length));
+    }
+
+    applyBoost(bonus) {
+        const boostMap = {
+            attack: { key: 'attack', value: 5, label: 'атака' },
+            defense: { key: 'defense', value: 10, label: 'защита' },
+            rain: { key: 'rain', value: 15, label: 'дождь' },
+            start: { key: 'start', value: 10, label: 'старт' },
+            fuel: { key: 'fuel', value: 15, label: 'топливо' },
+            qualy: { key: 'qualy', value: 5, label: 'квалификация' }
+        };
+        
+        const boost = boostMap[bonus];
+        if (boost) {
+            this.pilotBoosts[boost.key] = Math.min(50, (this.pilotBoosts[boost.key] || 0) + boost.value);
+            this.addChat('БУСТ', `+${boost.value}% к ${boost.label}!`, 'press');
+            this.addGarageMessage('🏆 БУСТ', `+${boost.value}% к ${boost.label}!`);
+        }
+    }
+
+    // ─── СЛЕДУЮЩИЙ ЭТАП ──────────────────────────────────────────
+    nextRound() {
+        this.currentRound++;
+        if (this.currentRound >= this.totalRounds) {
+            const winner = Object.entries(this.championship).sort((a, b) => b[1] - a[1])[0];
+            const cWinner = Object.entries(this.constructorsChamp).sort((a, b) => b[1] - a[1])[0];
+            this.addChat('ЧЕМПИОНАТ ЗАВЕРШЁН', `${winner[0]} — Чемпион мира! 🏆 ${cWinner[0]} — Кубок конструкторов!`, 'system');
+            if (this.els.btnNext) this.els.btnNext.style.display = 'none';
+            this.renderStandings();
+            this.addGarageMessage('🏆 ЧЕМПИОНАТ', `🏆 ${winner[0]} — Чемпион мира! 🏆 Кубок конструкторов — ${cWinner[0]}!`);
+            return;
+        }
+
+        if (this.els.protocolView) this.els.protocolView.style.display = 'none';
+        if (this.els.btnNext) this.els.btnNext.style.display = 'none';
+        if (this.els.chatMessages) this.els.chatMessages.innerHTML = '';
+        this.addChat('СИСТЕМА', `🏁 Этап ${this.currentRound + 1}: ${F1.tracks.find(t => t.id === F1.calendar[this.currentRound]?.trackId)?.name || '—'}`, 'system');
+        this.startRound();
+    }
+
+    // ─── СБРОС ────────────────────────────────────────────────────
+    resetGame() {
+        if (this.qualy.timer) clearInterval(this.qualy.timer);
+        if (this.race.timer) clearInterval(this.race.timer);
+        if (this.test.timer) clearInterval(this.test.timer);
         this.startSeason();
     }
 }
