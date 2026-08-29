@@ -1,7 +1,6 @@
 /**
  * Pit Wall Pulse 7.0 — ULTIMATE
- * ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ
- * Гонка, квалификация, чемпионат, гараж, симулятор
+ * Полная логика: гонка, чемпионат, пресс-конференция с бустами, тестовый заезд
  */
 
 // ============================================================
@@ -117,6 +116,29 @@ class PitWallPulse {
         this.stats = { races: 0, wins: 0, podiums: 0, points: 0, fastestLaps: 0 };
         this.raceHistory = [];
 
+        // БУСТЫ ОТ ПРЕСС-КОНФЕРЕНЦИИ
+        this.pilotBoosts = {
+            attack: 0,      // +% к атаке
+            defense: 0,     // +% к защите
+            rain: 0,        // +% сцепление в дождь
+            start: 0,       // +% на старте
+            fuel: 0,        // -% расход топлива
+            qualy: 0        // +% кликов в квалификации
+        };
+        this.confidence = 50; // Уверенность пилота (0-100)
+
+        // ТЕСТОВЫЙ ЗАЕЗД
+        this.testResults = [];
+        this.currentTestLap = 0;
+        this.testMaxLaps = 10;
+        this.testRunning = false;
+        this.testTimer = null;
+        this.testTrack = null;
+        this.testTire = 'medium';
+        this.testWeather = 'sunny';
+        this.testBestLap = 999;
+        this.testSectors = [];
+
         // Состояние гонки
         this.lap = 0;
         this.maxLaps = 40;
@@ -221,7 +243,19 @@ class PitWallPulse {
             statFastest: document.getElementById('statFastest'),
             driversStandings: document.getElementById('driversStandings'),
             constructorsStandings: document.getElementById('constructorsStandings'),
-            startGameBtn: document.getElementById('startGameBtn')
+            startGameBtn: document.getElementById('startGameBtn'),
+            // Тестовый заезд — добавляем в гараж
+            testBtn: document.getElementById('testBtn'),
+            testModal: document.getElementById('testModal'),
+            testTrackSelect: document.getElementById('testTrackSelect'),
+            testTireSelect: document.getElementById('testTireSelect'),
+            testWeatherSelect: document.getElementById('testWeatherSelect'),
+            testStart: document.getElementById('testStart'),
+            testStop: document.getElementById('testStop'),
+            testStatus: document.getElementById('testStatus'),
+            testLapDisplay: document.getElementById('testLapDisplay'),
+            testBestDisplay: document.getElementById('testBestDisplay'),
+            testResultsContainer: document.getElementById('testResultsContainer')
         };
 
         // Выбор пилота по умолчанию
@@ -235,11 +269,13 @@ class PitWallPulse {
         this.setupSimulator();
         this.setupGarageChat();
         this.setupGame();
+        this.setupTestDrive();
         this.updateStats();
 
         console.log('🏎️ Pit Wall Pulse 7.0 ULTIMATE загружен!');
         console.log(`👤 Пилот: ${this.playerPilot.name} (${this.playerTeam.name})`);
         console.log(`🏁 Всего Гран-при: ${this.totalRounds}`);
+        console.log(`💪 Активные бусты:`, this.pilotBoosts);
     }
 
     // ============================================================
@@ -265,13 +301,11 @@ class PitWallPulse {
 
         toggle.addEventListener('click', () => navLinks.classList.toggle('show'));
 
-        // Кнопка "Начать гонку" на главной
         this.els.startGameBtn.addEventListener('click', (e) => {
             e.preventDefault();
             document.querySelector('.nav-links a[href="#game"]').click();
         });
 
-        // Табы зачёта
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', function() {
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -394,7 +428,7 @@ class PitWallPulse {
     }
 
     // ============================================================
-    // СИМУЛЯТОР
+    // СИМУЛЯТОР (СТАРЫЙ)
     // ============================================================
     setupSimulator() {
         let simInterval = null;
@@ -434,6 +468,380 @@ class PitWallPulse {
     }
 
     // ============================================================
+    // ТЕСТОВЫЙ ЗАЕЗД (НОВЫЙ!)
+    // ============================================================
+    setupTestDrive() {
+        // Добавляем кнопку в гараж, если её нет
+        const garageCards = document.querySelector('.garage-grid');
+        if (garageCards && !document.getElementById('testDriveCard')) {
+            const testCard = document.createElement('div');
+            testCard.className = 'garage-card';
+            testCard.id = 'testDriveCard';
+            testCard.innerHTML = `
+                <div class="card-title">🏎️ ТЕСТОВЫЙ ЗАЕЗД</div>
+                <div class="test-controls">
+                    <select id="testTrackSelect" class="test-select">
+                        ${F1.tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+                    </select>
+                    <select id="testTireSelect" class="test-select">
+                        <option value="soft">Софт</option>
+                        <option value="medium" selected>Медиум</option>
+                        <option value="hard">Хард</option>
+                    </select>
+                    <select id="testWeatherSelect" class="test-select">
+                        <option value="sunny">☀️ Сухо</option>
+                        <option value="rainy">🌧️ Дождь</option>
+                    </select>
+                    <div class="test-buttons">
+                        <button class="sim-btn start" id="testStart">▶ Старт заезд</button>
+                        <button class="sim-btn stop" id="testStop">⏹ Стоп</button>
+                    </div>
+                </div>
+                <div class="test-stats">
+                    <div class="test-stat"><span>Круг</span><span id="testLapDisplay">0/10</span></div>
+                    <div class="test-stat"><span>Лучший</span><span id="testBestDisplay">--:--</span></div>
+                    <div class="test-stat"><span>Уверенность</span><span id="testConfidenceDisplay">50%</span></div>
+                </div>
+                <div id="testStatus" class="test-status">Нажмите «Старт» для тестового заезда</div>
+                <div id="testResultsContainer" class="test-results"></div>
+            `;
+            garageCards.appendChild(testCard);
+        }
+
+        // Обновляем ссылки на элементы
+        this.els.testTrackSelect = document.getElementById('testTrackSelect');
+        this.els.testTireSelect = document.getElementById('testTireSelect');
+        this.els.testWeatherSelect = document.getElementById('testWeatherSelect');
+        this.els.testStart = document.getElementById('testStart');
+        this.els.testStop = document.getElementById('testStop');
+        this.els.testStatus = document.getElementById('testStatus');
+        this.els.testLapDisplay = document.getElementById('testLapDisplay');
+        this.els.testBestDisplay = document.getElementById('testBestDisplay');
+        this.els.testConfidenceDisplay = document.getElementById('testConfidenceDisplay');
+        this.els.testResultsContainer = document.getElementById('testResultsContainer');
+
+        // Обработчики
+        this.els.testStart.addEventListener('click', () => this.startTestDrive());
+        this.els.testStop.addEventListener('click', () => this.stopTestDrive());
+        this.els.testStop.disabled = true;
+    }
+
+    startTestDrive() {
+        if (this.testRunning) return;
+        
+        const trackId = this.els.testTrackSelect.value;
+        this.testTrack = F1.tracks.find(t => t.id === trackId);
+        this.testTire = this.els.testTireSelect.value;
+        const weatherId = this.els.testWeatherSelect.value;
+        this.testWeather = F1.weathers.find(w => w.id === weatherId);
+        
+        this.testRunning = true;
+        this.currentTestLap = 0;
+        this.testBestLap = 999;
+        this.testSectors = [];
+        this.testResults = [];
+        
+        this.els.testStart.disabled = true;
+        this.els.testStop.disabled = false;
+        this.els.testStatus.textContent = `🏁 Тестовый заезд на ${this.testTrack.name}. ${this.testWeather.label}. ${this.testTire.toUpperCase()} шины.`;
+        this.els.testStatus.style.color = '#4FC3F7';
+        this.els.testResultsContainer.innerHTML = '';
+        
+        this.addGarageMessage('Инженер', `🏁 Начало тестового заезда на ${this.testTrack.name} (${this.testTire})`);
+        
+        // Таймер — каждый круг
+        if (this.testTimer) clearInterval(this.testTimer);
+        this.testTimer = setInterval(() => {
+            this.simulateTestLap();
+        }, 800);
+    }
+
+    simulateTestLap() {
+        this.currentTestLap++;
+        
+        // Симуляция круга
+        const trackFactor = this.testTrack.speed;
+        const weatherFactor = this.testWeather.grip;
+        const tireMap = { soft: 0.85, medium: 1.0, hard: 1.15 };
+        const tireFactor = tireMap[this.testTire] || 1.0;
+        
+        // Базовое время + вариации
+        const baseTime = 80 + Math.random() * 10;
+        const lapTime = (baseTime * tireFactor) / (trackFactor * weatherFactor) + Math.random() * 0.5;
+        
+        // Сектора
+        const s1 = lapTime * 0.35 + Math.random() * 0.2;
+        const s2 = lapTime * 0.30 + Math.random() * 0.2;
+        const s3 = lapTime * 0.35 + Math.random() * 0.2;
+        const total = s1 + s2 + s3;
+        
+        // Проверка лучшего круга
+        if (total < this.testBestLap) {
+            this.testBestLap = total;
+            this.els.testStatus.textContent = `🎯 НОВЫЙ ЛУЧШИЙ КРУГ! ${total.toFixed(3)}с`;
+            this.els.testStatus.style.color = '#FFD700';
+        }
+        
+        // Сохраняем результат
+        this.testResults.push({
+            lap: this.currentTestLap,
+            total: total,
+            s1: s1,
+            s2: s2,
+            s3: s3
+        });
+        
+        // Обновляем UI
+        this.els.testLapDisplay.textContent = `${this.currentTestLap}/${this.testMaxLaps}`;
+        this.els.testBestDisplay.textContent = this.testBestLap < 999 ? `${this.testBestLap.toFixed(3)}с` : '--:--';
+        
+        // Показываем сектора
+        const resultHtml = this.testResults.slice(-5).map(r => 
+            `<div class="test-result-row">
+                <span>Круг ${r.lap}</span>
+                <span>${r.total.toFixed(3)}с</span>
+                <span style="color:#4FC3F7">${r.s1.toFixed(2)}</span>
+                <span style="color:#FFD700">${r.s2.toFixed(2)}</span>
+                <span style="color:#FF6B35">${r.s3.toFixed(2)}</span>
+            </div>`
+        ).join('');
+        this.els.testResultsContainer.innerHTML = `
+            <div class="test-result-header">
+                <span>Круг</span>
+                <span>Всего</span>
+                <span>S1</span>
+                <span>S2</span>
+                <span>S3</span>
+            </div>
+            ${resultHtml}
+        `;
+        
+        // Уверенность растёт с каждым кругом
+        this.confidence = Math.min(100, this.confidence + 1.5 + Math.random());
+        this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+        
+        // Проверка завершения
+        if (this.currentTestLap >= this.testMaxLaps) {
+            this.stopTestDrive();
+        }
+    }
+
+    stopTestDrive() {
+        this.testRunning = false;
+        if (this.testTimer) {
+            clearInterval(this.testTimer);
+            this.testTimer = null;
+        }
+        
+        this.els.testStart.disabled = false;
+        this.els.testStop.disabled = true;
+        
+        if (this.testResults.length > 0) {
+            // Анализ результатов
+            const avg = this.testResults.reduce((sum, r) => sum + r.total, 0) / this.testResults.length;
+            const best = this.testBestLap;
+            const consistency = this.testResults.length > 0 ? 
+                100 - (this.testResults.reduce((sum, r) => sum + Math.abs(r.total - avg), 0) / this.testResults.length / avg * 100) : 0;
+            
+            // Оценка
+            let grade = 'Нужно тренироваться!';
+            if (best < 85 && consistency > 80) grade = '🔥 Отлично! Ты готов к гонке!';
+            else if (best < 92 && consistency > 70) grade = '💪 Хорошо! Есть потенциал!';
+            else if (best < 100) grade = '👍 Неплохо, но можно улучшить!';
+            
+            const gradeEmoji = grade.includes('🔥') ? '🏆' : grade.includes('💪') ? '💪' : '📈';
+            
+            this.els.testStatus.textContent = `✅ Заезд завершён! ${gradeEmoji} ${grade}`;
+            this.els.testStatus.style.color = '#00E676';
+            
+            this.addGarageMessage('Инженер', `📊 Тест на ${this.testTrack.name}: Лучший круг ${best.toFixed(3)}с, стабильность ${Math.round(consistency)}% — ${grade}`);
+            
+            // Бонус к уверенности за хороший тест
+            if (best < 85) {
+                this.confidence = Math.min(100, this.confidence + 10);
+                this.addGarageMessage('Инженер', '🔥 Отличный тест! Уверенность выросла!');
+            }
+        } else {
+            this.els.testStatus.textContent = '⏹ Заезд остановлен';
+            this.els.testStatus.style.color = '#FF6B35';
+        }
+        
+        this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+        this.updateStats();
+    }
+
+    // ============================================================
+    // ПРЕСС-КОНФЕРЕНЦИЯ С БУСТАМИ
+    // ============================================================
+    showPressConference() {
+        // Проверяем, сколько бустов уже есть
+        const boostCount = Object.values(this.pilotBoosts).filter(v => v > 0).length;
+        const questions = this.generatePressQuestions(Math.min(boostCount + 1, 3));
+        
+        const modal = document.createElement('div');
+        modal.className = 'press-modal';
+        modal.innerHTML = `
+            <div class="press-box">
+                <h3>🎙️ ПРЕСС-КОНФЕРЕНЦИЯ</h3>
+                <div class="press-sub">Ответь на вопросы журналистов и получи бонусы!</div>
+                <div class="press-boosts">
+                    <span class="boost-tag" data-boost="attack" style="${this.pilotBoosts.attack > 0 ? 'border-color:#FF1744' : ''}">
+                        ⚡ Атака ${this.pilotBoosts.attack > 0 ? `+${this.pilotBoosts.attack}%` : '—'}
+                    </span>
+                    <span class="boost-tag" data-boost="defense" style="${this.pilotBoosts.defense > 0 ? 'border-color:#4FC3F7' : ''}">
+                        🛡️ Защита ${this.pilotBoosts.defense > 0 ? `+${this.pilotBoosts.defense}%` : '—'}
+                    </span>
+                    <span class="boost-tag" data-boost="rain" style="${this.pilotBoosts.rain > 0 ? 'border-color:#4DD0E1' : ''}">
+                        🌧️ Дождь ${this.pilotBoosts.rain > 0 ? `+${this.pilotBoosts.rain}%` : '—'}
+                    </span>
+                    <span class="boost-tag" data-boost="start" style="${this.pilotBoosts.start > 0 ? 'border-color:#FFD700' : ''}">
+                        🏁 Старт ${this.pilotBoosts.start > 0 ? `+${this.pilotBoosts.start}%` : '—'}
+                    </span>
+                    <span class="boost-tag" data-boost="fuel" style="${this.pilotBoosts.fuel > 0 ? 'border-color:#66BB6A' : ''}">
+                        ⛽ Топливо ${this.pilotBoosts.fuel > 0 ? `-${this.pilotBoosts.fuel}%` : '—'}
+                    </span>
+                    <span class="boost-tag" data-boost="qualy" style="${this.pilotBoosts.qualy > 0 ? 'border-color:#9C27B0' : ''}">
+                        🏎️ Квалиф. ${this.pilotBoosts.qualy > 0 ? `+${this.pilotBoosts.qualy}%` : '—'}
+                    </span>
+                </div>
+                <div id="pressQuestions">
+                    ${questions.map((q, qi) => `
+                        <div class="press-question" data-q="${qi}" style="display:${qi === 0 ? 'block' : 'none'}">
+                            <div class="press-q">"${q.question}"</div>
+                            <div class="press-answers">
+                                ${q.answers.map((a, ai) => `
+                                    <button class="press-answer" data-q="${qi}" data-answer="${ai}" data-bonus="${a.bonus}">
+                                        ${a.text}
+                                        <span class="press-effect">${a.effect}</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="press-result" id="pressResult" style="display:none;"></div>
+                <button class="press-close" id="pressClose" style="display:none;">▶ Продолжить</button>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        let answered = 0;
+        const totalQuestions = questions.length;
+        
+        const showQuestion = (index) => {
+            const allQs = modal.querySelectorAll('.press-question');
+            allQs.forEach((q, i) => {
+                q.style.display = i === index ? 'block' : 'none';
+            });
+        };
+        
+        showQuestion(0);
+        
+        modal.querySelectorAll('.press-answer').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const qIndex = parseInt(this.dataset.q);
+                const bonus = this.dataset.bonus;
+                
+                // Применяем буст
+                this.applyBoost(bonus);
+                
+                const container = this.closest('.press-question');
+                container.querySelectorAll('.press-answer').forEach(b => {
+                    b.disabled = true;
+                    b.style.opacity = '0.4';
+                });
+                this.style.opacity = '1';
+                this.style.borderColor = '#FFD700';
+                this.style.background = 'rgba(255,215,0,0.08)';
+                
+                const result = modal.querySelector('#pressResult');
+                result.style.display = 'block';
+                result.innerHTML = `✅ Бонус активирован: <strong>${this.querySelector('.press-effect').textContent}</strong>`;
+                result.style.color = '#00E676';
+                
+                answered++;
+                
+                setTimeout(() => {
+                    if (answered < totalQuestions) {
+                        result.style.display = 'none';
+                        showQuestion(answered);
+                    } else {
+                        const closeBtn = modal.querySelector('#pressClose');
+                        closeBtn.style.display = 'block';
+                        result.innerHTML = `🎉 Отлично! Получено бустов!`;
+                        result.style.color = '#FFD700';
+                        this.addChat('ПРЕСС-КОНФЕРЕНЦИЯ', `${this.playerPilot.name} дал интервью! Получены бонусы.`, 'press');
+                        this.renderStandings();
+                        this.updateStats();
+                    }
+                }, 1200);
+            });
+        });
+        
+        modal.querySelector('#pressClose').addEventListener('click', () => {
+            modal.remove();
+            this.els.btnNext.style.display = 'block';
+            if (this.currentRound >= this.totalRounds - 1) {
+                this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
+            } else {
+                this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
+            }
+        });
+    }
+
+    generatePressQuestions(count) {
+        const allQuestions = [
+            {
+                question: 'Как ты оцениваешь свою гонку?',
+                answers: [
+                    { text: 'Я был слишком агрессивен', effect: '+5% к атаке', bonus: 'attack' },
+                    { text: 'Мне нужна стабильность', effect: '+10% к защите', bonus: 'defense' },
+                    { text: 'Погода мой конёк!', effect: '+15% сцепление в дождь', bonus: 'rain' }
+                ]
+            },
+            {
+                question: 'Что будешь менять в следующей гонке?',
+                answers: [
+                    { text: 'Буду агрессивнее в старте', effect: '+10% на старте', bonus: 'start' },
+                    { text: 'Сфокусируюсь на экономии', effect: '-15% расход топлива', bonus: 'fuel' },
+                    { text: 'Буду работать над квалификацией', effect: '+5% в квалификации', bonus: 'qualy' }
+                ]
+            },
+            {
+                question: 'Какой у тебя главный соперник?',
+                answers: [
+                    { text: 'Ферстаппен — слишком быстр', effect: '+8% концентрация', bonus: 'attack' },
+                    { text: 'Хэмилтон — опытен', effect: '+10% защита', bonus: 'defense' },
+                    { text: 'Норрис — мой друг', effect: '+10% к атаке в дуэлях', bonus: 'attack' }
+                ]
+            }
+        ];
+        
+        // Перемешиваем и берём нужное количество
+        const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, Math.min(count, shuffled.length));
+    }
+
+    applyBoost(bonus) {
+        const boostMap = {
+            attack: { key: 'attack', value: 5, label: 'атака' },
+            defense: { key: 'defense', value: 10, label: 'защита' },
+            rain: { key: 'rain', value: 15, label: 'дождь' },
+            start: { key: 'start', value: 10, label: 'старт' },
+            fuel: { key: 'fuel', value: 15, label: 'топливо' },
+            qualy: { key: 'qualy', value: 5, label: 'квалификация' }
+        };
+        
+        const boost = boostMap[bonus];
+        if (boost) {
+            this.pilotBoosts[boost.key] = Math.min(50, (this.pilotBoosts[boost.key] || 0) + boost.value);
+            this.addChat('БУСТ', `+${boost.value}% к ${boost.label}!`, 'press');
+            this.addGarageMessage('🏆 БУСТ', `+${boost.value}% к ${boost.label}!`);
+        }
+    }
+
+    // ============================================================
     // СТАТИСТИКА
     // ============================================================
     updateStats() {
@@ -442,6 +850,11 @@ class PitWallPulse {
         this.els.statPodiums.textContent = this.stats.podiums;
         this.els.statPoints.textContent = this.stats.points;
         this.els.statFastest.textContent = this.stats.fastestLaps;
+        
+        // Обновляем уверенность в гараже
+        if (this.els.testConfidenceDisplay) {
+            this.els.testConfidenceDisplay.textContent = `${Math.round(this.confidence)}%`;
+        }
     }
 
     // ============================================================
@@ -519,6 +932,8 @@ class PitWallPulse {
         F1.teams.forEach(t => this.constructorsChamp[t.name] = 0);
         this.stats = { races: 0, wins: 0, podiums: 0, points: 0, fastestLaps: 0 };
         this.raceHistory = [];
+        this.pilotBoosts = { attack: 0, defense: 0, rain: 0, start: 0, fuel: 0, qualy: 0 };
+        this.confidence = 50;
         this.updateStats();
         this.renderStandings();
         this.startRound();
@@ -555,6 +970,9 @@ class PitWallPulse {
         this.penaltyHistory = [];
         this.raceRunning = false;
 
+        // Применяем бусты
+        this.applyBoostsToRace();
+
         this.generateGrid();
 
         this.racePhase = 'qualy';
@@ -585,6 +1003,34 @@ class PitWallPulse {
 
         this.els.chatMessages.innerHTML = '';
         this.addChat('КВАЛИФИКАЦИЯ', `Начинается квалификация на Гран-при ${track.name}! Жми ГАЗ!`, 'qualy');
+    }
+
+    applyBoostsToRace() {
+        // Бусты влияют на стартовые характеристики
+        if (this.pilotBoosts.attack > 0) {
+            this.ers = Math.min(100, this.ers + this.pilotBoosts.attack * 0.5);
+            this.addChat('БУСТ', `+${this.pilotBoosts.attack}% к атаке активен!`, 'press');
+        }
+        if (this.pilotBoosts.defense > 0) {
+            this.tyre = Math.min(100, this.tyre + this.pilotBoosts.defense * 0.3);
+            this.addChat('БУСТ', `+${this.pilotBoosts.defense}% к защите активен!`, 'press');
+        }
+        if (this.pilotBoosts.rain > 0 && this.weather.rain > 0.3) {
+            this.weather.grip = Math.min(1.0, this.weather.grip + this.pilotBoosts.rain * 0.01);
+            this.addChat('БУСТ', `+${this.pilotBoosts.rain}% сцепление в дождь!`, 'press');
+        }
+        if (this.pilotBoosts.start > 0) {
+            this.energy = Math.min(100, this.energy + this.pilotBoosts.start * 0.5);
+            this.addChat('БУСТ', `+${this.pilotBoosts.start}% на старте!`, 'press');
+        }
+        if (this.pilotBoosts.fuel > 0) {
+            this.fuel = Math.min(100, this.fuel + this.pilotBoosts.fuel * 0.5);
+            this.addChat('БУСТ', `-${this.pilotBoosts.fuel}% расход топлива!`, 'press');
+        }
+        if (this.pilotBoosts.qualy > 0) {
+            this.qualyClicks += Math.floor(this.pilotBoosts.qualy * 0.5);
+            this.addChat('БУСТ', `+${this.pilotBoosts.qualy}% в квалификации!`, 'press');
+        }
     }
 
     generateGrid() {
@@ -661,7 +1107,6 @@ class PitWallPulse {
         this.raceRunning = true;
         this.els.btnStartRace.disabled = true;
 
-        // Применяем шины
         const tireMap = { soft: 15, medium: 0, hard: -15 };
         this.tyre = Math.min(100, this.tyre + tireMap[this.selectedTire] || 0);
 
@@ -670,7 +1115,6 @@ class PitWallPulse {
 
         document.querySelectorAll('.btn-race').forEach(b => b.disabled = false);
 
-        // Таймер гонки — каждый круг автоматически
         if (this.raceTimer) clearInterval(this.raceTimer);
         this.raceTimer = setInterval(() => {
             if (!this.done && this.raceRunning) {
@@ -682,20 +1126,16 @@ class PitWallPulse {
     autoProgress() {
         if (this.done || this.waiting || this.lap >= this.maxLaps) return;
 
-        // Имитация движения AI
         this.simulateAI();
 
-        // Обновляем UI
         this.renderLapTrack();
         this.renderRaceGrid();
         this.updateStatusBars();
 
-        // Инженерные сообщения
         if (this.lap > 0 && this.lap % 5 === 0 && !this.done) {
             this.sendEngineerMessage();
         }
 
-        // Проверка погоды
         if (this.weatherForecast > 0 && !this.weatherChange) {
             this.weatherForecast--;
             if (this.weatherForecast === 0) {
@@ -708,7 +1148,6 @@ class PitWallPulse {
             }
         }
 
-        // Проверка финиша
         if (this.lap >= this.maxLaps) {
             clearInterval(this.raceTimer);
             this.finishRace();
@@ -718,7 +1157,6 @@ class PitWallPulse {
     simulateAI() {
         this.lap++;
 
-        // AI двигается
         for (let i = 0; i < this.positions.length - 1; i++) {
             if (Math.random() < 0.15) {
                 const swapIdx = i + 1;
@@ -726,7 +1164,6 @@ class PitWallPulse {
             }
         }
 
-        // Игрок может потерять позицию если не атакует
         const playerIdx = this.positions.indexOf(this.playerPilot);
         if (playerIdx > 0 && Math.random() < 0.05) {
             const front = this.positions[playerIdx - 1];
@@ -738,12 +1175,9 @@ class PitWallPulse {
         this.playerPos = this.positions.indexOf(this.playerPilot) + 1;
         this.els.gameLap.textContent = `${this.lap} / ${this.maxLaps}`;
 
-        // Расход ресурсов
         this.tyre = Math.max(0, this.tyre - 1 - Math.random() * 2);
         this.fuel = Math.max(0, this.fuel - 0.5 - Math.random() * 1);
         this.energy = Math.max(0, this.energy - 0.3 - Math.random() * 0.7);
-
-        // Восстановление ERS
         this.ers = Math.min(100, this.ers + 0.5 + Math.random() * 0.5);
     }
 
@@ -760,25 +1194,26 @@ class PitWallPulse {
         const tireMap = { soft: 1.0, medium: 0.7, hard: 0.4 };
         const tireWear = tireMap[this.selectedTire] || 0.7;
 
-        let overtakeSuccess = false;
+        // Применяем бусты
+        const attackBoost = 1 + (this.pilotBoosts.attack || 0) / 100;
+        const defenseBoost = 1 + (this.pilotBoosts.defense || 0) / 100;
 
         if (action === 'attack') {
-            this.ers = Math.max(0, this.ers - (7 + Math.random() * 5) * trackFactor * weatherFactor);
+            this.ers = Math.max(0, this.ers - (7 + Math.random() * 5) * trackFactor * weatherFactor / attackBoost);
             this.tyre = Math.max(0, this.tyre - (4 + Math.random() * 4) * (1 + tireWear * 0.5));
             this.fuel = Math.max(0, this.fuel - (3 + Math.random() * 3) * (this.track?.fuelCons || 1));
             this.energy = Math.max(0, this.energy - 5 - Math.random() * 5);
 
-            // Попытка обгона
             const playerIdx = this.positions.indexOf(this.playerPilot);
             if (playerIdx > 0) {
-                const baseChance = 0.3 + (this.ers > 70 ? 0.2 : 0) + (this.tyre > 50 ? 0.1 : 0);
+                let baseChance = 0.3 + (this.ers > 70 ? 0.2 : 0) + (this.tyre > 50 ? 0.1 : 0);
+                baseChance *= attackBoost;
                 if (Math.random() < baseChance * trackFactor * (this.weather?.grip || 1)) {
                     const front = this.positions[playerIdx - 1];
                     this.positions[playerIdx] = front;
                     this.positions[playerIdx - 1] = this.playerPilot;
                     this.overtakes.push(front);
                     this.addChat('ОБГОН', `${this.playerPilot.name} обошёл ${front.name}!`, 'pilot');
-                    overtakeSuccess = true;
                 } else if (Math.random() < 0.04) {
                     this.penalties += 5;
                     this.penaltyHistory.push(this.lap);
@@ -788,7 +1223,7 @@ class PitWallPulse {
         } else if (action === 'conserve') {
             this.ers = Math.min(100, this.ers + (3 + Math.random() * 3) * trackFactor);
             this.tyre = Math.min(100, this.tyre + (2 + Math.random() * 2));
-            this.fuel = Math.max(0, this.fuel - (1 + Math.random() * 1.5));
+            this.fuel = Math.max(0, this.fuel - (1 + Math.random() * 1.5) / defenseBoost);
             this.energy = Math.min(100, this.energy + 3 + Math.random() * 4);
             this.addChat('ЭКОНОМ', 'Экономия ресурсов.', 'system');
         } else if (action === 'box') {
@@ -816,7 +1251,6 @@ class PitWallPulse {
             }
         }
 
-        // Быстрый круг
         if (action === 'attack' && this.ers > 60 && Math.random() < 0.2) {
             const lapTime = 60 + Math.random() * 5 - (this.ers / 100) * 2;
             if (lapTime < this.fastestLapTime) {
@@ -826,7 +1260,6 @@ class PitWallPulse {
             }
         }
 
-        // Прокол
         if (this.tyre < 10 && Math.random() < 0.1) {
             this.addChat('ПРОКОЛ', `${this.playerPilot.name} проколол шину! Срочно в боксы!`, 'penalty');
             this.tyre = 5;
@@ -936,7 +1369,6 @@ class PitWallPulse {
         const bonus = this.fastestLap ? 1 : 0;
         this.points = earned + bonus;
 
-        // Начисление очков
         this.positions.forEach((d, i) => {
             const pos = i + 1;
             const pts = pointsMap[pos] || 0;
@@ -950,7 +1382,6 @@ class PitWallPulse {
             if (team) this.constructorsChamp[team.name] = (this.constructorsChamp[team.name] || 0) + pts;
         });
 
-        // Гонщик дня
         const progress = this.positions.map((d, i) => {
             const startIdx = this.positions.indexOf(d);
             return { name: d.name, progress: startIdx - i };
@@ -958,7 +1389,6 @@ class PitWallPulse {
         progress.sort((a, b) => b.progress - a.progress);
         this.dotd = progress[0]?.name || this.playerPilot.name;
 
-        // Статистика
         this.stats.races++;
         if (finalPos <= 3) this.stats.podiums++;
         if (finalPos === 1) this.stats.wins++;
@@ -966,7 +1396,6 @@ class PitWallPulse {
         if (this.fastestLap) this.stats.fastestLaps++;
         this.updateStats();
 
-        // Протокол
         this.els.raceView.style.display = 'none';
         this.els.protocolView.style.display = 'block';
 
@@ -988,14 +1417,11 @@ class PitWallPulse {
 
         this.renderStandings();
 
-        this.els.btnNext.style.display = 'block';
-        if (this.currentRound >= this.totalRounds - 1) {
-            this.els.btnNext.textContent = '🏆 ЗАВЕРШИТЬ СЕЗОН';
-        } else {
-            this.els.btnNext.textContent = '▶ СЛЕДУЮЩИЙ ЭТАП';
-        }
+        // Показываем пресс-конференцию
+        setTimeout(() => {
+            this.showPressConference();
+        }, 1200);
 
-        // Уведомление в гараже
         this.addGarageMessage('📊 ИТОГО', `${this.playerPilot.name} — P${finalPos}, +${this.points} очков`);
     }
 
@@ -1027,6 +1453,7 @@ class PitWallPulse {
     resetGame() {
         if (this.qualyTimer) clearInterval(this.qualyTimer);
         if (this.raceTimer) clearInterval(this.raceTimer);
+        if (this.testTimer) clearInterval(this.testTimer);
         this.startSeason();
     }
 }
@@ -1037,4 +1464,4 @@ class PitWallPulse {
 document.addEventListener('DOMContentLoaded', () => {
     const game = new PitWallPulse();
     window.game = game;
-}); q
+});
